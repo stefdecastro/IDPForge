@@ -18,30 +18,20 @@ import os
 import sys
 import subprocess
 import argparse
+import time
 import re
 import mdtraj as md
 from glob import glob
 
-# --- Load Centralized Configuration ---
 try:
     import config as cfg
 except ImportError:
     print("CRITICAL ERROR: 'project_config.py' not found.")
     sys.exit(1)
 
-# =============================================================================
-# LOGGING HELPER
-# =============================================================================
 def log(msg, force=False):
-    """
-    Prints message only if VERBOSE is True, or if 'force' is True.
-    """
     if getattr(cfg, 'VERBOSE', True) or force:
         print(msg)
-
-# =============================================================================
-# HELPER FUNCTIONS
-# =============================================================================
 
 def get_pdb_map(pdb_dir):
     log(f"Scanning PDB library: {pdb_dir}", force=True)
@@ -53,43 +43,36 @@ def get_pdb_map(pdb_dir):
     for f in files:
         base = os.path.basename(f)
         m = pattern_af.search(base)
-        if m:
-            mapping[m.group(1)] = f
+        if m: mapping[m.group(1)] = f
         else:
             m2 = pattern_simple.match(base)
-            if m2:
-                mapping[m2.group(1)] = f
+            if m2: mapping[m2.group(1)] = f
                 
     log(f"  -> Mapped {len(mapping)} PDB files.", force=True)
     return mapping
 
-# =============================================================================
-# MAIN EXECUTION
-# =============================================================================
-
-def main():
-    parser = argparse.ArgumentParser(description="Step 2: IDPForge Template Generation")
-    parser.add_argument("--start-index", type=int, default=None, 
-                        help="Force start at specific index (1-based).")
-    args = parser.parse_args()
+def main(args):
+    IS_VERBOSE = args.verbose
+    if IS_VERBOSE:
+        print(f"   [STATUS] Verbose Mode: ON (Detailed Logs Enabled)", flush=True)
 
     # 1. Validation
-    if not os.path.exists(cfg.LABELED_DB_PATH):
-        print(f"ERROR: Labeled DB not found at {cfg.LABELED_DB_PATH}")
+    if not os.path.exists(args.labeled_db):
+        print(f"ERROR: Labeled DB not found at {args.labeled_db}")
         sys.exit(1)
 
-    if not os.path.exists(cfg.ID_LISTS_DIR):
-        print(f"ERROR: ID List directory not found: {cfg.ID_LISTS_DIR}")
+    if not os.path.exists(args.id_lists_dir):
+        print(f"ERROR: ID List directory not found: {args.id_lists_dir}")
         sys.exit(1)
 
     # 2. Load Resources
     log(f"Loading database...", force=True)
-    with open(cfg.LABELED_DB_PATH, 'r') as f:
+    with open(args.labeled_db, 'r') as f:
         labeled_db = json.load(f)
 
-    log(f"Loading work queue from: {cfg.ID_LISTS_DIR}", force=True)
-    all_txt_files = glob(os.path.join(cfg.ID_LISTS_DIR, "*.txt"))
-    
+    log(f"Loading work queue from: {args.id_lists_dir}", force=True)
+    all_txt_files = glob(os.path.join(args.id_lists_dir, "*.txt"))
+
     if not all_txt_files:
         print("[!] No .txt files found.")
         sys.exit(1)
@@ -99,17 +82,17 @@ def main():
         with open(txt, 'r') as f:
             lines = [line.strip() for line in f if line.strip()]
             all_ids_set.update(lines)
-            log(f"  - Loaded {len(lines)} IDs from {os.path.basename(txt)}")
-    
+            if IS_VERBOSE:
+                log(f"  - Loaded {len(lines)} IDs from {os.path.basename(txt)}")
+
     all_prot_ids = sorted(list(all_ids_set))
     log(f"  -> Total Unique IDs to process: {len(all_prot_ids)}", force=True)
 
-    # Build PDB Map
-    id_to_pdb = get_pdb_map(cfg.PDB_LIBRARY_PATH)
+    id_to_pdb = get_pdb_map(args.pdb_library)
 
-    # 3. Setup Output & Resume Logic
-    os.makedirs(cfg.TEMPLATE_OUTPUT_DIR, exist_ok=True)
-    progress_file = os.path.join(cfg.TEMPLATE_OUTPUT_DIR, "Step_2_progress.txt")
+    # 3. Setup Output & Resume
+    os.makedirs(args.output_dir, exist_ok=True)
+    progress_file = os.path.join(args.output_dir, "Step_2_progress.txt")
     
     start_idx = 0
     if args.start_index is not None:
@@ -131,13 +114,12 @@ def main():
 
     # 4. Load Cache
     idp_cases = {}
-    if os.path.exists(cfg.IDP_CASES_LIST_PATH):
+    idp_cases_path = os.path.join(args.output_dir, os.path.basename(cfg.IDP_CASES_LIST_PATH))
+    if os.path.exists(idp_cases_path):
         try:
-            with open(cfg.IDP_CASES_LIST_PATH, 'r') as f:
-                idp_cases = json.load(f)
+            with open(idp_cases_path, 'r') as f: idp_cases = json.load(f)
         except: pass
 
-    # 5. Processing Loop
     stats = {'processed': 0, 'created': 0, 'skipped_cache': 0, 
              'skipped_error': 0, 'skipped_timeout': 0, 'idp_found': 0}
 
@@ -146,16 +128,11 @@ def main():
     for i, prot_id in enumerate(ids_to_process):
         current_global_idx = start_idx + i
         
-        # Save Progress
-        with open(progress_file, 'w') as pf:
-            pf.write(prot_id)
+        with open(progress_file, 'w') as pf: pf.write(prot_id)
 
-        # Silent Mode: Print progress update every 100 items
-        if not getattr(cfg, 'VERBOSE', True):
-            if i % 100 == 0:
-                print(f"  ... Processed {i}/{len(ids_to_process)} proteins ...")
+        if not IS_VERBOSE:
+            if i % 100 == 0: print(f"  ... Processed {i}/{len(ids_to_process)} proteins ...")
 
-        # Verbose Mode: Print every item
         log(f"\n[{current_global_idx + 1}/{len(all_prot_ids)}] Processing {prot_id}...")
 
         if prot_id not in labeled_db:
@@ -203,7 +180,7 @@ def main():
             if not idr_type or not rng: continue
 
             subdir_name = idr_type.replace(" ", "_") 
-            out_dir = os.path.join(cfg.TEMPLATE_OUTPUT_DIR, subdir_name)
+            out_dir = os.path.join(args.output_dir, subdir_name)
             os.makedirs(out_dir, exist_ok=True)
             
             fname = f"{prot_id}_idr_{rng[0]}-{rng[1]}.npz"
@@ -217,10 +194,12 @@ def main():
             # Select Script
             if idr_type in ["Tail IDR", "Loop IDR"]:
                 script = cfg.SCRIPT_STATIC_TEMPLATE
-                timeout = cfg.TIMEOUT_STATIC_TEMPLATE
+                timeout = args.timeout_static
+                script_name = "mk_ldr (Static)"
             elif idr_type == "Linker IDR":
                 script = cfg.SCRIPT_FLEX_TEMPLATE
-                timeout = cfg.TIMEOUT_DYNAMIC_TEMPLATE
+                timeout = args.timeout_dynamic
+                script_name = "mk_flex (Dynamic)"
             else: continue
 
             cmd = [
@@ -228,18 +207,25 @@ def main():
                 pdb_path,
                 f"{rng[0]}-{rng[1]}",
                 out_path,
-                "--nconf", str(cfg.TEMPLATE_N_CONFS)
+                "--nconf", str(args.n_confs)
             ]
 
             try:
-                log(f"  -> Generating {idr_type} {rng}...", force=False)
+                # --- VERBOSE INFO BLOCK ---
+                if IS_VERBOSE:
+                    print(f"  [INFO] Dispatching Template | Script: {script_name} | Timeout: {timeout}s", flush=True)
+
+                t_gen_start = time.time()
                 res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-                
+                t_gen_end = time.time()
+
                 if res.returncode == 0:
-                    log("     Done.")
+                    if IS_VERBOSE:
+                        print(f"  [TIMING] Template Generation: {t_gen_end - t_gen_start:.2f}s", flush=True)
+                    else:
+                        log("     Done.")
                     stats['created'] += 1
                 else:
-                    # ALWAYS print errors, even in silent mode
                     print(f"[!] FAILED: {prot_id} {idr_type}")
                     err_msg = res.stderr.strip()[:200] if res.stderr else "Unknown Error"
                     print(f"    Error: {err_msg}...") 
@@ -255,7 +241,7 @@ def main():
         stats['processed'] += 1
         
         if i % 10 == 0:
-            with open(cfg.IDP_CASES_LIST_PATH, 'w') as f:
+            with open(idp_cases_path, 'w') as f:
                 json.dump(idp_cases, f, indent=4)
 
     # 6. Finalization
@@ -267,11 +253,31 @@ def main():
     print(f" Skipped (Error):    {stats['skipped_error']}")
     print(f" Skipped (Timeout):  {stats['skipped_timeout']}")
 
-    with open(cfg.IDP_CASES_LIST_PATH, 'w') as f:
+    with open(idp_cases_path, 'w') as f:
         json.dump(idp_cases, f, indent=4)
 
     if start_idx + len(ids_to_process) >= len(all_prot_ids):
         if os.path.exists(progress_file): os.remove(progress_file)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Step 2: IDPForge Template Generation")
+    parser.add_argument("--start-index", type=int, default=None,
+                        help="Force start at specific index (1-based).")
+    parser.add_argument("--labeled_db", default=cfg.LABELED_DB_PATH,
+                        help=f"Path to labeled database JSON (default: {cfg.LABELED_DB_PATH}).")
+    parser.add_argument("--id_lists_dir", default=cfg.ID_LISTS_DIR,
+                        help=f"Directory containing ID list .txt files (default: {cfg.ID_LISTS_DIR}).")
+    parser.add_argument("--pdb_library", default=cfg.PDB_LIBRARY_PATH,
+                        help=f"Path to AlphaFold PDB library (default: {cfg.PDB_LIBRARY_PATH}).")
+    parser.add_argument("--output_dir", default=cfg.TEMPLATE_OUTPUT_DIR,
+                        help=f"Output directory for templates (default: {cfg.TEMPLATE_OUTPUT_DIR}).")
+    parser.add_argument("--n_confs", type=int, default=cfg.TEMPLATE_N_CONFS,
+                        help=f"Number of conformations per template (default: {cfg.TEMPLATE_N_CONFS}).")
+    parser.add_argument("--timeout_static", type=int, default=cfg.TIMEOUT_STATIC_TEMPLATE,
+                        help=f"Timeout for static templates in seconds (default: {cfg.TIMEOUT_STATIC_TEMPLATE}).")
+    parser.add_argument("--timeout_dynamic", type=int, default=cfg.TIMEOUT_DYNAMIC_TEMPLATE,
+                        help=f"Timeout for dynamic templates in seconds (default: {cfg.TIMEOUT_DYNAMIC_TEMPLATE}).")
+    parser.add_argument("--verbose", action="store_true", default=cfg.VERBOSE,
+                        help="Enable detailed per-protein logging.")
+    args = parser.parse_args()
+    main(args)

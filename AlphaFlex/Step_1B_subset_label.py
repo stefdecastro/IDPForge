@@ -21,6 +21,7 @@ import json
 import os
 import random
 import sys
+import argparse
 from collections import defaultdict
 
 try:
@@ -29,31 +30,31 @@ except ImportError:
     print("CRITICAL ERROR: 'project_config.py' not found.")
     sys.exit(1)
 
-def log(msg, force=False):
-    if getattr(cfg, 'VERBOSE', True) or force:
-        print(msg)
+def main(args):
+    def log(msg, force=False):
+        if args.verbose or force:
+            print(msg)
 
-def main():
     log("--- Step 1B: Subset Generation ---", force=True)
-    
-    if not os.path.exists(cfg.LABELED_DB_PATH):
-        print(f"ERROR: Labeled DB not found: {cfg.LABELED_DB_PATH}")
+
+    if not os.path.exists(args.labeled_db):
+        print(f"ERROR: Labeled DB not found: {args.labeled_db}")
         sys.exit(1)
 
     log(f"Loading labeled DB...")
-    with open(cfg.LABELED_DB_PATH, 'r') as f:
+    with open(args.labeled_db, 'r') as f:
         master_db = json.load(f)
 
     log(f"Loading length reference...")
-    with open(cfg.LENGTH_REF_PATH, 'r') as f:
+    with open(args.length_ref, 'r') as f:
         num_residues_db = json.load(f)
 
     # Output Setup
-    range_label = f"{cfg.SUBSET_MIN_LENGTH}-{cfg.SUBSET_MAX_LENGTH}AA"
-    output_dir = os.path.join(cfg.ID_LISTS_OUTPUT_ROOT, range_label)
+    range_label = f"{args.min_length}-{args.max_length}AA"
+    output_dir = os.path.join(args.output_root, range_label)
     os.makedirs(output_dir, exist_ok=True)
-    
-    log(f"Target Range: {cfg.SUBSET_MIN_LENGTH} - {cfg.SUBSET_MAX_LENGTH} residues", force=True)
+
+    log(f"Target Range: {args.min_length} - {args.max_length} residues", force=True)
     log(f"Output Folder: {output_dir}", force=True)
 
     pools = defaultdict(list)
@@ -65,7 +66,7 @@ def main():
         length = num_residues_db.get(prot_id, 0)
         
         # Inclusive bounds check
-        if not (cfg.SUBSET_MIN_LENGTH <= length <= cfg.SUBSET_MAX_LENGTH):
+        if not (args.min_length <= length <= args.max_length):
             count_skipped_len += 1
             continue
 
@@ -92,7 +93,7 @@ def main():
             open(filepath, 'w').close()
             continue
             
-        sample_size = min(total_available, cfg.SUBSET_SAMPLE_SIZE)
+        sample_size = min(total_available, args.sample_size)
         sampled_ids = random.sample(id_list, sample_size)
         sampled_ids.sort() 
         
@@ -112,12 +113,28 @@ def main():
     with open(summary_json_path, 'w') as f:
         json.dump({
             "length_range": range_label,
-            "min_len": cfg.SUBSET_MIN_LENGTH,
-            "max_len": cfg.SUBSET_MAX_LENGTH,
+            "min_len": args.min_length,
+            "max_len": args.max_length,
             "counts": summary_counts,
         }, f, indent=4)
 
     log("\n--- Step 1B Complete ---", force=True)
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Step 1B: Subset Sampling & ID List Generation")
+    parser.add_argument("--labeled_db", default=cfg.LABELED_DB_PATH,
+                        help=f"Path to labeled database JSON (default: {cfg.LABELED_DB_PATH}).")
+    parser.add_argument("--length_ref", default=cfg.LENGTH_REF_PATH,
+                        help=f"Path to residue-count reference JSON (default: {cfg.LENGTH_REF_PATH}).")
+    parser.add_argument("--output_root", default=cfg.ID_LISTS_OUTPUT_ROOT,
+                        help=f"Root directory for output ID lists (default: {cfg.ID_LISTS_OUTPUT_ROOT}).")
+    parser.add_argument("--min_length", type=int, default=cfg.SUBSET_MIN_LENGTH,
+                        help=f"Minimum protein length, inclusive (default: {cfg.SUBSET_MIN_LENGTH}).")
+    parser.add_argument("--max_length", type=int, default=cfg.SUBSET_MAX_LENGTH,
+                        help=f"Maximum protein length, inclusive (default: {cfg.SUBSET_MAX_LENGTH}).")
+    parser.add_argument("--sample_size", type=int, default=cfg.SUBSET_SAMPLE_SIZE,
+                        help=f"Max proteins per category (default: {cfg.SUBSET_SAMPLE_SIZE}).")
+    parser.add_argument("--verbose", action="store_true", default=cfg.VERBOSE,
+                        help="Enable detailed logging.")
+    args = parser.parse_args()
+    main(args)
