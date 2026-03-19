@@ -166,6 +166,7 @@ class IDPForge(nn.Module):
         potential = None,
         potential_grad_clip: T.Optional[float] = None,
         template_cfg: T.Optional[T.Dict] = None,
+        enforce_template: bool = True,
     ):
         aa, aa_mask = batch["sequence"], batch["mask"]
         d = x_t.dtype
@@ -209,6 +210,38 @@ class IDPForge(nn.Module):
                 alpha_t = torch.tensor(alpha_t, dtype=d, device=self.device)
                 if self.cfg.self_condition:
                     prev_outputs = output
+        # Align final output to template frame and enforce folded coordinates.
+        # The model's output["positions"] is in an arbitrary reference frame.
+        # Intermediate steps use align_coords() in get_next_pose() to bring
+        # predictions into the template frame, but the final step (t=0) skips
+        # get_next_pose(). We apply Kabsch alignment here, then snap folded
+        # residue coords to exact template values.
+        if enforce_template and template_cfg is not None:
+            from idpforge.utils.diff_utils import align_coords
+            pos = output["positions"][-1]  # (B, L, natom, 3)
+            tpl = template_cfg["coord"]    # (B, L, natom, 3) or (L, natom, 3)
+            mask = template_cfg["mask"]    # (B, L) bool
+
+            # Convert to numpy for align_coords
+            pos_np = pos.detach().cpu().float().numpy()
+            tpl_np = tpl.detach().cpu().float().numpy()
+            mask_np = mask.detach().cpu().numpy().astype(bool)
+
+            # Ensure batch dimension on template
+            if tpl_np.ndim == 3:
+                tpl_np = np.tile(tpl_np[None, ...], (pos_np.shape[0], 1, 1, 1))
+
+            # Kabsch-align output onto template using folded Cα
+            aligned = align_coords(tpl_np, pos_np, mask_np)
+
+            # Snap folded residues to exact template coordinates
+            i, j = np.where(mask_np)
+            aligned[i, j, :5, :] = tpl_np[i, j, :5, :]
+
+            # Write back
+            output["positions"][-1] = torch.tensor(
+                aligned, dtype=pos.dtype, device=pos.device
+            )
         return output
 
 
@@ -226,6 +259,7 @@ class IDPForge(nn.Module):
         residue_index_offset: T.Optional[int] = 512,
         chain_linker: T.Optional[str] = "G" * 25,
         masking_pattern: T.Optional[torch.Tensor] = None,
+        enforce_template: bool = True,
     ):
         if isinstance(sequences, str):
             sequences = [sequences]
@@ -250,6 +284,7 @@ class IDPForge(nn.Module):
                 potential_grad_clip=potential_cfgs.get("grad_clip", None) \
                         if potential_cfgs is not None else None,
                 template_cfg=template_cfgs,
+                enforce_template=enforce_template,
         )
         
         # deal with artificial linkers for multi-chains
