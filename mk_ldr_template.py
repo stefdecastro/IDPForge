@@ -1,6 +1,6 @@
 # Auxilary file for preparing the LDR inputs
 # created by OZ, 1/8/25
-# modified by SDC, 11/1/25
+# modified by SDC, 3/12/26
 
 import numpy as np
 import mdtraj as md
@@ -19,7 +19,7 @@ except ImportError:
 
 
 def sample_fix_distance(batch_size, fixed_distance, 
-                        exclude_center=[], exclude_radius=[], tol=0.2): # Default: 0.8 Rg
+                        exclude_center=[], exclude_radius=[], tol=0.8): # Default: 0.8 Rg
     """
     Generates points on a sphere, vectorized to efficiently exclude multiple
     regions.
@@ -63,9 +63,14 @@ def sample_fix_distance(batch_size, fixed_distance,
     return vectors[~is_bad_point]
 
 
-def est_distance(n, min_clip=12):
-    """Estimate distance based on sequence length."""
-    return max(2.4 * n ** 0.588, min_clip)
+def est_distance(n):
+    """Estimate Rg-based distance for a disordered tail/loop.
+
+    Hofmann et al. 2012 (PNAS 109:16155), Eq. 3:
+    Rg = sqrt(2*lp*b / ((2v+1)(2v+2))) * N^v
+    With lp=4.0 A, b=3.8 A, v=0.588: Rg ≈ 2.10 * N^0.588
+    """
+    return 2.10 * n ** 0.588
 
 
 def calc_rg(crd):
@@ -84,7 +89,7 @@ def calc_rg(crd):
     return np.sqrt(rg_sq)
 
 
-def main(pdb, disorder_idx, nsample, **kwargs):
+def main(pdb, disorder_idx, nsample):
     crd, seq = process_pdb(pdb)
     torsion = get_chi_angles(crd, seq)[0]
     torsion_vec = np.stack((np.sin(torsion), np.cos(torsion)), axis=-1)
@@ -126,7 +131,7 @@ def main(pdb, disorder_idx, nsample, **kwargs):
     # 2. Shift exclusion centers relative to the new origin
     shifted_exclude_center = [c - folded_center for c in exclude_center]
     
-    d = est_distance(len(disorder_idx_list), **kwargs)
+    d = est_distance(len(disorder_idx_list))
     
     batch_multiplier = 10 # Start by sampling 10x more than needed
     max_tries = 10

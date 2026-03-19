@@ -1,6 +1,6 @@
 # Auxilary file for preparing the LDR inputs with flexible domains
 # created by OZ, 1/8/25
-# modified by SDC, 11/1/25
+# modified by SDC, 3/12/26
 
 import numpy as np
 import mdtraj as md
@@ -86,9 +86,17 @@ def sample_fold_orientation(
 ):
     """
     Tries to find a non-clashing orientation for two domains.
+    Includes a check to prevent 'Taut String' artifacts.
     """
-    d = 5 * idr_len ** 0.588
+    # 1. Calculate Flory-based target distance
+    # Hofmann et al. 2012 (PNAS 109:16155), Eq. 3:
+    # Re = sqrt(2*lp*b) * N^v = 5.51 * N^0.588
+    # With lp=4.0 A (persistence length), b=3.8 A (CA-CA distance)
+    d = 5.51 * idr_len ** 0.588
     
+    # 2. Calculate the absolute physical maximum (Residues * 3.8 Angstroms)
+    max_physical_limit = idr_len * 3.8
+
     for i in range(max_outer_loops):
         if (i + 1) % 10 == 0:
             print(f"       ... Sampling domain orientation (Outer loop {i + 1}/{max_outer_loops})", flush=True)
@@ -98,8 +106,12 @@ def sample_fold_orientation(
         rotated_fold1 = np.einsum('nij,jk->nik', fold1_centered, R.T)
         new_fold1 = rotated_fold1 + center_fold1
         
+        # Sample from Gaussian, but clamp it to the physical limit
+        raw_dist = np.random.normal(d, d / 3)
+        dist_sample = min(abs(raw_dist), max_physical_limit)
+
         success, new_fold2 = random_nonclashing_transform_scaled(
-            fold2_centered, new_fold1, np.random.normal(d, d / 3), 
+            fold2_centered, new_fold1, dist_sample, 
             max_attempts=max_attempts, 
             min_dist=min_dist
         )
@@ -108,7 +120,9 @@ def sample_fold_orientation(
             return new_fold1, new_fold2 
 
     print(f"       Warning: sample_fold_orientation failed to find a non-clashing pose after {max_outer_loops} outer loops. Returning a *clashing* pose as fallback.", flush=True)
-    fallback_d = np.random.normal(d, d / 3)
+    
+    raw_fallback_d = np.random.normal(d, d / 3)
+    fallback_d = min(abs(raw_fallback_d), max_physical_limit)
     
     R = random_rotation_matrix()
     rotated_fold1 = np.einsum('nij,jk->nik', fold1_centered, R.T)

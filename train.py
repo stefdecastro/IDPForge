@@ -29,13 +29,12 @@ def main(args):
         euclid_b0=settings["diffuse"]["euclid_b0"], euclid_bT=settings["diffuse"]["euclid_bT"], 
         tor_b0=settings["diffuse"]["torsion_b0"], tor_bT=settings["diffuse"]["torsion_bT"])
     denoiser = Denoiser(settings["diffuse"]["n_tsteps_inf"], diffuser)
-    data_module = IDPloader([settings["data"]["path"] + f"{n}.pkl" for n in settings["data"]["idpseq"]], 
+    data_module = IDPloader(
+                    train_path=settings["data"]["train_path"],
+                    val_path=settings["data"]["val_path"],
                     diffuser=diffuser,
-                    train_size=settings["data"]["train_size"], 
-                    val_size=settings["data"]["val_size"],
                     tr_batch_size=settings['data']['tr_batch_size'],
                     val_batch_size=settings['data']['val_batch_size'],
-                    test_batch_size=settings['data']['test_batch_size'],
                     )
     data_module.setup("fit")
     
@@ -91,7 +90,7 @@ def main(args):
         version=args.run_version,
         )
     trainer = Trainer(
-        strategy="ddp",
+        strategy="auto",
         callbacks=callbacks,
         logger=logger,
         **settings["training"]["trainer"],
