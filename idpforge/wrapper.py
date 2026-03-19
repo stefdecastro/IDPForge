@@ -106,7 +106,7 @@ class IDPForgeWrapper(pl.LightningModule):
             self._log_pdbs(output, batch, batch_idx, False) 
 
 
-    def validation_epoch_end(self, _):
+    def on_validation_epoch_end(self):
         # Restore the model weights to normal
         self.model.load_state_dict(self.cached_weights)
         self.cached_weights = None
