@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 # --- 1. Import Auto Config ---
 try:
-    import auto_config as cfg
+    import config as cfg
 except ImportError:
     print("Warning: auto_config.py not found. Relying on manual arguments.")
     cfg = None
@@ -243,11 +243,11 @@ def main():
             sys.exit(1)
     else:
         base_dir = None
-        if cfg and hasattr(cfg, 'stitch_output_dir') and os.path.exists(cfg.stitch_output_dir):
-            base_dir = cfg.stitch_output_dir
+        if cfg and hasattr(cfg, 'STITCH_OUTPUT_ROOT') and os.path.exists(cfg.STITCH_OUTPUT_ROOT):
+            base_dir = cfg.STITCH_OUTPUT_ROOT
             print(f"Auto-detected Step 4 Dir: {base_dir}")
-        elif cfg and hasattr(cfg, 'root_output_dir') and os.path.exists(cfg.root_output_dir):
-            base_dir = cfg.root_output_dir
+        elif cfg and hasattr(cfg, 'CONFORMER_POOL_DIR') and os.path.exists(cfg.CONFORMER_POOL_DIR):
+            base_dir = cfg.CONFORMER_POOL_DIR
             print(f"Auto-detected Step 3 Dir: {base_dir}")
         
         if base_dir:
