@@ -12,7 +12,8 @@ if __name__ == "__main__":
         packages=find_packages(include=['esm*', 'idpforge*']),
         install_requires=[
             'torch',
-            'pyyaml'
+            'pyyaml',
+            'tqdm'
         ],
         license='MIT',
         keywords=[

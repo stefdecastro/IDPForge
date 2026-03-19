@@ -48,6 +48,7 @@ dependencies:
   - bioconda::hmmer
   - bioconda::hhsuite
   - bioconda::kalign2
+  - bioconda::mmseqs2
   - pdb-tools
 
   # --- ML & Utility Libraries ---
@@ -74,6 +75,8 @@ dependencies:
       - pytorch-lightning
       - deepspeed==0.14.5
       - dm-tree==0.1.6
+      - tensorboard
     
       # Pin git-based dependency to a specific commit for reproducibility.
+      - topoly
       - git+https://github.com/NVIDIA/dllogger.git@0478734ff7be75adde8d160e04872664d1c62e5f
