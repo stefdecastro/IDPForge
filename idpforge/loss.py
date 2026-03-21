@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from openfold.np.residue_constants import restype_order
+from openfold.np.residue_constants import ca_ca, restype_order
 from openfold.utils.rigid_utils import Rigid, Rotation, identity_rot_mats
 from openfold.utils.loss import (
     backbone_loss,
