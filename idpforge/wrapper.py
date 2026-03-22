@@ -72,7 +72,8 @@ class IDPForgeWrapper(pl.LightningModule):
         output["sstype"] = batch["ss"]
         loss, loss_breakdown = self.loss_fn(output,
                 batch["frame"], batch["coord"], batch["torsion"],
-                self.config['training']['loss'])
+                self.config['training']['loss'],
+                current_epoch=self.trainer.current_epoch)
                 
         # Log it
         loss_breakdown["loss"] = loss

@@ -39,7 +39,7 @@ def sidechain_fape(pred_rigids, true_rigids, pred_coords, true_coords,
   
 
 def calc_loss(pred, true_rigids, true_coords, true_torsions,
-              loss_cfg):
+              loss_cfg, current_epoch=None):
     torsion_mask = torch.cat((pred["atom14_atom_exists"][..., :1].repeat(1, 1, 3),
         get_chi_mask(pred["aatype"]) * pred["atom14_atom_exists"][..., :1]), dim=-1)
     angloss = torsion_loss(pred["positions"][-1][..., :3, :],
@@ -58,27 +58,31 @@ def calc_loss(pred, true_rigids, true_coords, true_torsions,
             clamp_distance=loss_cfg["fape"]["clamp_distance"])   # CA only
 
         sidechain_fapeloss = sidechain_fape(
-                pred["sidechain_frames"][-1], true_rigids, 
-                pred_coords=pred["positions"][-1], 
+                pred["sidechain_frames"][-1], true_rigids,
+                pred_coords=pred["positions"][-1],
                 true_coords=true_coords,
-                atom_mask=pred["atom14_atom_exists"], 
-                sidechain_mask=torsion_mask, 
+                atom_mask=pred["atom14_atom_exists"],
+                sidechain_mask=torsion_mask,
                 fape_clamp=None).mean()
         loss_dict["fape"] = (fapeloss + sidechain_fapeloss) ** 2
-    
+
     if loss_cfg["weights"]["dist"] > 0:
-        dloss = cb_dist_loss(pred, true_coords,
-                    loss_cfg["dist"]["loop_clamp"])
-        if loss_cfg["dist"]["sidechain"] > 0:
-            dloss = dloss + loss_cfg["dist"]["sidechain"] * dist_loss(
-                    pred["positions"][-1][..., :9, :], true_coords,
-                    pred["atom14_atom_exists"][..., :9],
-                    loss_cfg["dist"]["sidechain_clamp"])
-        loss_dict["dist"] = dloss
-                
+        dist_start_epoch = loss_cfg.get("dist", {}).get("start_epoch", 0)
+        if current_epoch is None or current_epoch >= dist_start_epoch:
+            dloss = cb_dist_loss(pred, true_coords,
+                        loss_cfg["dist"]["loop_clamp"])
+            if loss_cfg["dist"]["sidechain"] > 0:
+                dloss = dloss + loss_cfg["dist"]["sidechain"] * dist_loss(
+                        pred["positions"][-1][..., :9, :], true_coords,
+                        pred["atom14_atom_exists"][..., :9],
+                        loss_cfg["dist"]["sidechain_clamp"])
+            loss_dict["dist"] = dloss
+
     if loss_cfg["weights"]["violation"] > 0:
-        violoss = viol_loss(pred)
-        loss_dict["violation"] = violoss
+        viol_start_epoch = loss_cfg.get("violation_cfg", {}).get("start_epoch", 0)
+        if current_epoch is None or current_epoch >= viol_start_epoch:
+            violoss = viol_loss(pred)
+            loss_dict["violation"] = violoss
 
     return torch.sum(torch.stack([loss_cfg["weights"][k]*v for k, v in loss_dict.items()])), \
         {name:loss_dict[name].item() for name in loss_dict}
@@ -166,7 +170,7 @@ def ca_connectivity_loss(coords, ca_mask):
     return ((ca_dist - ca_ca)**2).sum() / ca_mask.sum()
 
 def viol_loss(batch, return_metric=False):
-    violations = find_structural_violations(batch, batch["positions"][-1].detach(), 5, 5)
+    violations = find_structural_violations(batch, batch["positions"][-1], 5, 5)
     bond_clash_loss = violation_loss(violations, batch["atom14_atom_exists"]).mean()
     if return_metric:
         return bond_clash_loss, violations["total_per_residue_violations_mask"]

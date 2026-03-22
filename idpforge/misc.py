@@ -148,13 +148,13 @@ def output_to_pdb(
         pdb_str = to_pdb(pred)
 
         # Numbered filename
-        fname = os.path.join(save_path, f"{file_idx}_raw.pdb")
-
-        with open(fname, "w") as f:
-            f.write(pdb_str)
-
-        written_files.append(fname)
-        file_idx += 1
+        if save_path is not None:
+            fname = os.path.join(save_path, f"{file_idx}_raw.pdb")
+            with open(fname, "w") as f:
+                f.write(pdb_str)
+            written_files.append(fname)
+        else:
+            written_files.append(pdb_str)
 
     # If relaxation is requested, run it here
     if relax is not None:
