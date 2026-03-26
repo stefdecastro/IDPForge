@@ -50,6 +50,15 @@ import shutil
 from tqdm import tqdm
 from pdbtools import pdb_mkensemble
 
+
+def mkensemble(pdb_files):
+    """Wrapper around pdb_mkensemble.run that ensures each line ends with \\n.
+    pdb-tools' pad_line can swallow the newline on TER records, causing
+    ENDMDL to be appended to the TER line instead of its own line."""
+    for line in pdb_mkensemble.run(pdb_files):
+        yield line.rstrip('\n') + '\n'
+
+
 # --- BioPython Setup ---
 try:
     from Bio.PDB import PDBParser, PDBIO
@@ -252,7 +261,7 @@ def process_protein(protein_id, labeled_db, id_to_pdb_path, conformer_root_dir, 
         ensemble_path = os.path.join(final_dest_dir, ensemble_filename)
 
         with open(ensemble_path, 'w') as f:
-            f.writelines(pdb_mkensemble.run(source_files))
+            f.writelines(mkensemble(source_files))
 
         if verbose:
             print(f"    -> Ensemble PDB saved: {ensemble_path} ({n_models} models)")
@@ -350,7 +359,7 @@ def process_protein(protein_id, labeled_db, id_to_pdb_path, conformer_root_dir, 
                 cnt += 1
 
         if verbose:
-            print(f"       [CONFIG] Freezing All Folded: {format_ranges(frozen_ids)}")
+            print(f"       [CONFIG] Freezing residues: {format_ranges(frozen_ids)}")
 
         # --- PRE-MINIMIZATION: Save and repair chirality ---
         io_save = PDBIO()
@@ -477,7 +486,7 @@ def process_protein(protein_id, labeled_db, id_to_pdb_path, conformer_root_dir, 
         ensemble_path = os.path.join(final_dest_dir, ensemble_filename)
 
         with open(ensemble_path, 'w') as f:
-            f.writelines(pdb_mkensemble.run(conformer_files))
+            f.writelines(mkensemble(conformer_files))
 
         if verbose:
             print(f"    -> Ensemble PDB saved: {ensemble_path} ({n_models} models)")
@@ -613,8 +622,6 @@ if __name__ == "__main__":
             }
 
             completed = as_completed(futures)
-            if not verbose:
-                completed = tqdm(completed, total=len(futures), desc="Step 4", unit="protein")
 
             for fut in completed:
                 protein_id = futures[fut]
@@ -630,8 +637,6 @@ if __name__ == "__main__":
     else:
         # --- SEQUENTIAL EXECUTION ---
         iterator = valid_ids
-        if not verbose:
-            iterator = tqdm(iterator, total=len(valid_ids), desc="Step 4", unit="protein")
 
         for i, protein_id in enumerate(iterator, 1):
             if verbose:
