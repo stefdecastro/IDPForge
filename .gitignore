@@ -48,9 +48,8 @@ Testing/
 AlphaFlex/Pipeline_Outputs/
 AlphaFlex/Analysis/
 AlphaFlex/Data_Inputs/AF2_*/
-AlphaFlex/Data_Inputs/*.json
-AlphaFlex/utils/
 .claude/
+CLAUDE.md
 
 # Junk #
 ########
