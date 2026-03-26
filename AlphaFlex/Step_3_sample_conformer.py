@@ -63,14 +63,15 @@ STATE_FILENAME = ".step3_state.json"
 # ------------------------------------------------------------------------
 # STATE PERSISTENCE (for cluster resumability)
 # ------------------------------------------------------------------------
-def _load_state(output_dir):
+def _load_state(output_dir, verbose=False):
     """Load persisted state from a previous run, or return defaults."""
     state_path = os.path.join(output_dir, STATE_FILENAME)
     if os.path.exists(state_path):
         try:
             with open(state_path, 'r') as f:
                 state = json.load(f)
-            print(f"   [Resume] Loaded state: {state['total_attempts']} prior attempts.", flush=True)
+            if verbose:
+                print(f"   [Resume] Loaded state: {state['total_attempts']} prior attempts.", flush=True)
             return state
         except Exception:
             pass
@@ -93,12 +94,13 @@ def _save_state(output_dir, total_attempts):
 # ------------------------------------------------------------------------
 # ORPHAN RECOVERY (pick up files from a killed run)
 # ------------------------------------------------------------------------
-def _collect_orphaned_relaxed(output_dir):
+def _collect_orphaned_relaxed(output_dir, verbose=False):
     """Find *_relaxed.pdb files left over from a previous killed run."""
     relaxed = glob.glob(os.path.join(output_dir, "*_relaxed.pdb"))
     if relaxed:
         relaxed.sort(key=lambda p: _numeric_sort_key_relaxed(p))
-        print(f"   [Resume] Found {len(relaxed)} orphaned relaxed files.", flush=True)
+        if verbose:
+            print(f"   [Resume] Found {len(relaxed)} orphaned relaxed files.", flush=True)
     return relaxed
 
 
@@ -121,7 +123,7 @@ def _cleanup_dir(output_dir):
 # ------------------------------------------------------------------------
 # PHASE 1: GENERATION + RELAXATION (subprocess to sample_ldr.py)
 # ------------------------------------------------------------------------
-def generate_conformers(npz_path, output_dir, num_to_generate):
+def generate_conformers(npz_path, output_dir, num_to_generate, verbose=False):
     """
     Calls sample_ldr.py (with relaxation) to produce N_relaxed.pdb files.
     HIS hydrogen stripping and AMBER minimization happen inside sample_ldr.
@@ -132,7 +134,8 @@ def generate_conformers(npz_path, output_dir, num_to_generate):
     start_count = len(existing)
     target_total = start_count + num_to_generate
 
-    print(f"   [Gen] Generating {num_to_generate} new conformers (with relaxation)...", flush=True)
+    if verbose:
+        print(f"   [Gen] Generating {num_to_generate} new conformers (with relaxation)...", flush=True)
 
     cmd = [
         cfg.PYTHON_EXEC, cfg.SCRIPT_SAMPLE_LDR,
@@ -144,7 +147,8 @@ def generate_conformers(npz_path, output_dir, num_to_generate):
     if cfg.DEVICE == "cuda":
         cmd.append("--cuda")
 
-    print(f"   [Gen] Launching subprocess on GPU...", flush=True)
+    if verbose:
+        print(f"   [Gen] Launching subprocess on GPU...", flush=True)
 
     env = os.environ.copy()
     env["CUDA_VISIBLE_DEVICES"] = "0"
@@ -164,7 +168,8 @@ def generate_conformers(npz_path, output_dir, num_to_generate):
         glob.glob(os.path.join(output_dir, "*_relaxed.pdb")),
         key=_numeric_sort_key_relaxed
     )
-    print(f"   [Gen] {len(relaxed_files)} relaxed files now in directory.", flush=True)
+    if verbose:
+        print(f"   [Gen] {len(relaxed_files)} relaxed files now in directory.", flush=True)
     return relaxed_files
 
 
@@ -185,7 +190,7 @@ def _relax_single(pdb_path, output_dir, stem, mask, viol_mask, dev_idx):
 
         relax_config = copy.deepcopy(RELAX_CONFIG)
         if mask is not None:
-            relax_config["exclude_residues"] = np.where(mask)[0].tolist()
+            relax_config["exclude_residues"] = np.where(~mask)[0].tolist()
 
         result = relax_protein(
             config=relax_config,
@@ -215,7 +220,7 @@ def _relax_single(pdb_path, output_dir, stem, mask, viol_mask, dev_idx):
         return None
 
 
-def repair_and_rerelax(relaxed_files, output_dir, mask):
+def repair_and_rerelax(relaxed_files, output_dir, mask, verbose=False):
     """
     Structural repair phase applied to every relaxed file:
       1. check_bond_integrity  -> identify broken HIS ring bonds
@@ -258,7 +263,8 @@ def repair_and_rerelax(relaxed_files, output_dir, mask):
         if n_chiral > 0:
             total_chiral += n_chiral
             needs_rerelax = True
-            print(f"       [REPAIR] Flipped {n_chiral} D-isomer(s) in {fname}.", flush=True)
+            if verbose:
+                print(f"       [REPAIR] Flipped {n_chiral} D-isomer(s) in {fname}.", flush=True)
 
         # --- 3. Fix HIS atom naming (only flagged residues) ---
         if his_resids:
@@ -275,7 +281,8 @@ def repair_and_rerelax(relaxed_files, output_dir, mask):
             result_files.append(relaxed_path)
             continue
 
-        print(f"      [Re-relax] Re-relaxing {fname}...", flush=True)
+        if verbose:
+            print(f"      [Re-relax] Re-relaxing {fname}...", flush=True)
         stem = fname.replace("_relaxed.pdb", "") + "_rerelax"
         rerelaxed_path = _relax_single(
             relaxed_path, output_dir, stem, mask, viol_mask, dev_idx
@@ -285,11 +292,12 @@ def repair_and_rerelax(relaxed_files, output_dir, mask):
             os.replace(rerelaxed_path, relaxed_path)
             result_files.append(relaxed_path)
         else:
-            print(f"      [Re-relax] Failed for {fname}, discarding.", flush=True)
+            if verbose:
+                print(f"      [Re-relax] Failed for {fname}, discarding.", flush=True)
             if os.path.exists(relaxed_path):
                 os.remove(relaxed_path)
 
-    # --- Summary ---
+    # --- Summary (always print) ---
     repairs = []
     if total_chiral > 0:
         repairs.append(f"{total_chiral} D-amino acid(s)")
@@ -308,7 +316,7 @@ def repair_and_rerelax(relaxed_files, output_dir, mask):
 # ------------------------------------------------------------------------
 # PHASE 3: VALIDATE (with detailed per-conformer logging)
 # ------------------------------------------------------------------------
-def validate_all(relaxed_files, output_dir, idr_range, total_attempts, num_validated):
+def validate_all(relaxed_files, output_dir, idr_range, total_attempts, num_validated, verbose=False):
     """
     Validates each relaxed file with detailed logging matching the requested format.
     Returns (num_new_valid, total_attempts_after).
@@ -326,8 +334,9 @@ def validate_all(relaxed_files, output_dir, idr_range, total_attempts, num_valid
         total_attempts += 1
         threshold = get_smart_threshold(total_attempts, num_validated + new_valid)
 
-        print(SEP, flush=True)
-        print(f"     [Attempt {total_attempts}] Validating {os.path.basename(relaxed_path)}...", flush=True)
+        if verbose:
+            print(SEP, flush=True)
+            print(f"     [Attempt {total_attempts}] Validating {os.path.basename(relaxed_path)}...", flush=True)
 
         t0 = time.perf_counter()
 
@@ -346,39 +355,42 @@ def validate_all(relaxed_files, output_dir, idr_range, total_attempts, num_valid
 
             elapsed = time.perf_counter() - t0
 
-            # --- Extract results for logging ---
-            chiral_pass = info.get("chirality_pass", True)
-            bonds_pass = info.get("bonds_pass", True)
-            clash_pass = info.get("clash_pass", True)
-            knot_pass = info.get("knot_pass", True)
+            if verbose:
+                # --- Extract results for logging ---
+                chiral_pass = info.get("chirality_pass", True)
+                bonds_pass = info.get("bonds_pass", True)
+                clash_pass = info.get("clash_pass", True)
+                knot_pass = info.get("knot_pass", True)
 
-            clash_count = info.get("num_clashes", "?")
-            clash_score = info.get("clash_score", 0.0)
-            n_broken = info.get("num_broken_bonds", 0)
-            knot_type = info.get("knot_type", "None")
+                clash_count = info.get("num_clashes", "?")
+                clash_score = info.get("clash_score", 0.0)
+                n_broken = info.get("num_broken_bonds", 0)
+                knot_type = info.get("knot_type", "None")
 
-            chiral_str = "PASS" if chiral_pass else "FAIL (D-Amino detected)"
-            bonds_str = "PASS" if bonds_pass else f"FAIL ({n_broken} broken)"
-            clash_str = "PASS" if clash_pass else "FAIL"
-            knot_str = "PASS" if knot_pass else f"FAIL ({knot_type})"
+                chiral_str = "PASS" if chiral_pass else "FAIL (D-Amino detected)"
+                bonds_str = "PASS" if bonds_pass else f"FAIL ({n_broken} broken)"
+                clash_str = "PASS" if clash_pass else "FAIL"
+                knot_str = "PASS" if knot_pass else f"FAIL ({knot_type})"
 
-            # --- Print detailed log (matches validation order) ---
-            print(f"       [TIMING] Validate: {elapsed:.2f}s", flush=True)
-            print(f"       [POST-MIN CHECK] Validating...", flush=True)
-            print(f"         - Chirality: {chiral_str}", flush=True)
-            print(f"         - Bonds:     {bonds_str}", flush=True)
-            print(f"         - Clashes:   {clash_count}  (Score: {clash_score:.2f} | Limit: {threshold:.1f}) -> {clash_str}", flush=True)
-            print(f"         - Topology:  {knot_str}", flush=True)
+                # --- Print detailed log (matches validation order) ---
+                print(f"       [TIMING] Validate: {elapsed:.2f}s", flush=True)
+                print(f"       [POST-MIN CHECK] Validating...", flush=True)
+                print(f"         - Chirality: {chiral_str}", flush=True)
+                print(f"         - Bonds:     {bonds_str}", flush=True)
+                print(f"         - Clashes:   {clash_count}  (Score: {clash_score:.2f} | Limit: {threshold:.1f}) -> {clash_str}", flush=True)
+                print(f"         - Topology:  {knot_str}", flush=True)
 
             if is_valid:
                 validated_name = f"{next_idx}_validated.pdb"
                 atomic_transfer(relaxed_path, output_dir, validated_name)
                 new_valid += 1
                 count_display = num_validated + new_valid
-                print(f"       [RESULT] SUCCESS! Count: {count_display}/{target}", flush=True)
+                if verbose:
+                    print(f"       [RESULT] SUCCESS! Count: {count_display}/{target}", flush=True)
                 next_idx += 1
             else:
-                print(f"       [RESULT] FAILED ({info['reason']}) [Thresh: {threshold:.2f}]", flush=True)
+                if verbose:
+                    print(f"       [RESULT] FAILED ({info['reason']}) [Thresh: {threshold:.2f}]", flush=True)
 
                 # Delete failed relaxed file
                 if os.path.exists(relaxed_path):
@@ -391,7 +403,8 @@ def validate_all(relaxed_files, output_dir, idr_range, total_attempts, num_valid
             if os.path.exists(relaxed_path):
                 os.remove(relaxed_path)
 
-    print(SEP, flush=True)
+    if verbose:
+        print(SEP, flush=True)
     return new_valid, total_attempts
 
 
@@ -414,7 +427,7 @@ def _count_validated(output_dir):
 # ------------------------------------------------------------------------
 # MAIN WORKFLOW PER IDR
 # ------------------------------------------------------------------------
-def run_idr_workflow(prot_id, npz_path, start_res, end_res):
+def run_idr_workflow(prot_id, npz_path, start_res, end_res, verbose=False):
     range_tag = f"idr_{start_res}-{end_res}"
     output_dir = os.path.join(cfg.CONFORMER_POOL_DIR, prot_id, range_tag)
     os.makedirs(output_dir, exist_ok=True)
@@ -430,26 +443,29 @@ def run_idr_workflow(prot_id, npz_path, start_res, end_res):
     idr_range = (start_res, end_res)
 
     # Load persisted state (survives cluster preemption / restarts)
-    state = _load_state(output_dir)
+    state = _load_state(output_dir, verbose=verbose)
     total_attempts = state["total_attempts"]
 
     # ------------------------------------------------------------------
     # RESUME PHASE: Process orphaned relaxed files from a killed run
     # ------------------------------------------------------------------
-    orphaned_relaxed = _collect_orphaned_relaxed(output_dir)
+    orphaned_relaxed = _collect_orphaned_relaxed(output_dir, verbose=verbose)
     if orphaned_relaxed:
         num_val, _ = _count_validated(output_dir)
 
-        print(f"\n   --- Resume Phase: Chirality ({len(orphaned_relaxed)} orphaned relaxed) ---", flush=True)
-        orphaned_relaxed = repair_and_rerelax(orphaned_relaxed, output_dir, fixed_mask)
+        if verbose:
+            print(f"\n   --- Resume Phase: Chirality ({len(orphaned_relaxed)} orphaned relaxed) ---", flush=True)
+        orphaned_relaxed = repair_and_rerelax(orphaned_relaxed, output_dir, fixed_mask, verbose=verbose)
 
         if orphaned_relaxed:
-            print(f"\n   --- Resume Phase: Validate ({len(orphaned_relaxed)} orphaned relaxed) ---", flush=True)
+            if verbose:
+                print(f"\n   --- Resume Phase: Validate ({len(orphaned_relaxed)} orphaned relaxed) ---", flush=True)
             new_valid, total_attempts = validate_all(
-                orphaned_relaxed, output_dir, idr_range, total_attempts, num_val
+                orphaned_relaxed, output_dir, idr_range, total_attempts, num_val, verbose=verbose
             )
             _save_state(output_dir, total_attempts)
-            print(f"   [Resume Summary] +{new_valid} recovered from orphaned relaxed files.", flush=True)
+            if verbose:
+                print(f"   [Resume Summary] +{new_valid} recovered from orphaned relaxed files.", flush=True)
 
     # Clean up any leftover raw files (sample_ldr may have left them)
     for raw_f in glob.glob(os.path.join(output_dir, "*_raw.pdb")):
@@ -472,34 +488,38 @@ def run_idr_workflow(prot_id, npz_path, start_res, end_res):
 
         needed = cfg.SAMPLE_N_CONFS - num_val
         num_to_generate = max(math.ceil(needed * 1.2), 10)
-        print(f"   [Status] Have {num_val}/{cfg.SAMPLE_N_CONFS}. Need {needed}. Generating {num_to_generate}.", flush=True)
+        if verbose:
+            print(f"   [Status] Have {num_val}/{cfg.SAMPLE_N_CONFS}. Need {needed}. Generating {num_to_generate}.", flush=True)
 
         # 2. PHASE 1: Generate + relax conformers (sample_ldr handles both)
-        relaxed_files = generate_conformers(npz_path, output_dir, num_to_generate)
+        relaxed_files = generate_conformers(npz_path, output_dir, num_to_generate, verbose=verbose)
 
         if not relaxed_files:
             print(f"   [Warning] No relaxed files produced. Retrying...", flush=True)
             continue
 
         # 3. PHASE 2: Chirality check on relaxed files (flip + re-relax if needed)
-        print(f"\n   --- Phase: Chirality ({len(relaxed_files)} files) ---", flush=True)
-        relaxed_files = repair_and_rerelax(relaxed_files, output_dir, fixed_mask)
+        if verbose:
+            print(f"\n   --- Phase: Chirality ({len(relaxed_files)} files) ---", flush=True)
+        relaxed_files = repair_and_rerelax(relaxed_files, output_dir, fixed_mask, verbose=verbose)
 
         if not relaxed_files:
             print(f"   [Warning] No structures survived chirality repair. Retrying...", flush=True)
             continue
 
         # 4. PHASE 3: Validate all with detailed logging
-        print(f"\n   --- Phase: Validate ({len(relaxed_files)} files) ---", flush=True)
+        if verbose:
+            print(f"\n   --- Phase: Validate ({len(relaxed_files)} files) ---", flush=True)
         new_valid, total_attempts = validate_all(
-            relaxed_files, output_dir, idr_range, total_attempts, num_val
+            relaxed_files, output_dir, idr_range, total_attempts, num_val, verbose=verbose
         )
 
         # Persist state after every round
         _save_state(output_dir, total_attempts)
 
-        print(f"\n   [Round Summary] +{new_valid} validated this round. "
-              f"Total attempts: {total_attempts}.", flush=True)
+        if verbose:
+            print(f"\n   [Round Summary] +{new_valid} validated this round. "
+                  f"Total attempts: {total_attempts}.", flush=True)
 
     else:
         print(f"   [ABORT] Max attempts ({cfg.SAMPLE_MAX_TOTAL_ATTEMPTS}) reached "
@@ -530,6 +550,8 @@ def find_and_sort_templates(prot_id):
 # ENTRY POINT
 # ------------------------------------------------------------------------
 def main(args):
+    verbose = args.verbose
+
     print("=" * 60, flush=True)
     print("  Phased Conformer Generation Pipeline (Step 3)", flush=True)
     print("=" * 60, flush=True)
@@ -566,7 +588,7 @@ def main(args):
 
         print(f"   Found {len(templates)} regions.", flush=True)
         for t in templates:
-            run_idr_workflow(prot_id, t["path"], t["start"], t["end"])
+            run_idr_workflow(prot_id, t["path"], t["start"], t["end"], verbose=verbose)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Step 3: Phased Conformer Generation Pipeline")
@@ -594,5 +616,7 @@ if __name__ == "__main__":
                         help=f"Path to model YAML config (default: {cfg.MODEL_CONFIG_PATH}).")
     parser.add_argument("--ss_db", default=cfg.SS_DB_PATH,
                         help=f"Path to secondary structure database (default: {cfg.SS_DB_PATH}).")
+    parser.add_argument("--verbose", action="store_true", default=cfg.VERBOSE,
+                        help="Enable detailed per-conformer logging.")
     args = parser.parse_args()
     main(args)
