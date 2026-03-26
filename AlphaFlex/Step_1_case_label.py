@@ -82,11 +82,6 @@ def main(args):
     
     for i, (prot_id, data) in enumerate(master_db.items()):
         
-        # --- Progress Heartbeat (Silent Mode) ---
-        if not IS_VERBOSE:
-            if i > 0 and i % 5000 == 0:
-                print(f"  ... Scanned {i}/{total_proteins} proteins ...")
-
         # --- Verbose Log ---
         log(f"Processing {prot_id}...")
 
