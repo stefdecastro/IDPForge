@@ -156,6 +156,8 @@ def output_to_pdb(
         else:
             written_files.append(pdb_str)
 
+        file_idx += 1
+
     # If relaxation is requested, run it here
     if relax is not None:
         from idpforge.utils.relax import relax_protein
