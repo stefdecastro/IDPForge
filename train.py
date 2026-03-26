@@ -68,6 +68,15 @@ def main(args):
         save_last=True,
     )
     callbacks.append(mc)
+
+    mc_recent = ModelCheckpoint(
+        every_n_epochs=1,
+        save_top_k=5,
+        monitor="step",
+        mode="max",
+        filename='latest-{epoch}-{step}',
+        )
+    callbacks.append(mc_recent)
     
     if args.early_stopping:
         es = EarlyStoppingVerbose(
