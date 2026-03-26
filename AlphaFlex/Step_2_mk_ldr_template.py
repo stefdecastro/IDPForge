@@ -130,9 +130,6 @@ def main(args):
         
         with open(progress_file, 'w') as pf: pf.write(prot_id)
 
-        if not IS_VERBOSE:
-            if i % 100 == 0: print(f"  ... Processed {i}/{len(ids_to_process)} proteins ...")
-
         log(f"\n[{current_global_idx + 1}/{len(all_prot_ids)}] Processing {prot_id}...")
 
         if prot_id not in labeled_db:
