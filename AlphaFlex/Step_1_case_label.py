@@ -12,6 +12,8 @@ Classifies proteins into four hierarchical categories based on IDR topology:
 import json
 import os
 import sys
+import time
+import argparse
 from collections import defaultdict
 
 # --- Load Centralized Configuration ---
@@ -22,36 +24,43 @@ except ImportError:
     sys.exit(1)
 
 # =============================================================================
-# LOGGING HELPER
-# =============================================================================
-def log(msg, force=False):
-    """Prints message only if VERBOSE is True or force is True."""
-    if getattr(cfg, 'VERBOSE', True) or force:
-        print(msg)
-
-# =============================================================================
 # MAIN EXECUTION
 # =============================================================================
 
-def main():
+def main(args):
+    IS_VERBOSE = args.verbose
+    labeled_db_path = os.path.join(args.output_dir, os.path.basename(cfg.LABELED_DB_PATH))
+    summary_path = os.path.join(args.output_dir, os.path.basename(cfg.SUMMARY_TEXT_PATH))
+
+    def log(msg, force=False):
+        if IS_VERBOSE or force:
+            print(msg)
+
     print("--- Step 1: IDR Classification & Labeling ---")
+    if IS_VERBOSE:
+        print(f"   [STATUS] Verbose Mode: ON (Detailed Logs Enabled)", flush=True)
 
     # 1. Verify Inputs
-    if not os.path.exists(cfg.MASTER_DB_PATH):
-        print(f"ERROR: Untouched DB not found at {cfg.MASTER_DB_PATH}")
+    if not os.path.exists(args.input_db):
+        print(f"ERROR: Untouched DB not found at {args.input_db}")
         sys.exit(1)
-        
-    if not os.path.exists(cfg.LENGTH_REF_PATH):
-        print(f"ERROR: Length reference not found at {cfg.LENGTH_REF_PATH}")
+
+    if not os.path.exists(args.length_ref):
+        print(f"ERROR: Length reference not found at {args.length_ref}")
         sys.exit(1)
 
     # 2. Load Data
     log(f"Loading master database...", force=True)
-    with open(cfg.MASTER_DB_PATH, 'r') as f:
+    if IS_VERBOSE:
+        print(f"   [INFO] Source DB: {args.input_db}", flush=True)
+        print(f"   [INFO] Length Ref: {args.length_ref}", flush=True)
+
+    t_start = time.time()
+
+    with open(args.input_db, 'r') as f:
         master_db = json.load(f)
 
-    log(f"Loading residue counts...", force=True)
-    with open(cfg.LENGTH_REF_PATH, 'r') as f:
+    with open(args.length_ref, 'r') as f:
         num_residues_db = json.load(f)
 
     log(f"  -> Loaded {len(master_db)} proteins.", force=True)
@@ -61,7 +70,6 @@ def main():
     skipped_count = 0
     type_counts = defaultdict(int)
     
-    # Category Counters
     count_cat_0 = 0 # Full IDP
     count_cat_1 = 0 # Tails
     count_cat_2 = 0 # Linkers
@@ -74,11 +82,6 @@ def main():
     
     for i, (prot_id, data) in enumerate(master_db.items()):
         
-        # --- Progress Heartbeat (Silent Mode) ---
-        if not getattr(cfg, 'VERBOSE', True):
-            if i > 0 and i % 5000 == 0:
-                print(f"  ... Scanned {i}/{total_proteins} proteins ...")
-
         # --- Verbose Log ---
         log(f"Processing {prot_id}...")
 
@@ -96,13 +99,10 @@ def main():
         idrs = data['idrs']
         num_res = num_residues_db[prot_id]
         
-        # Interaction map
         interactions_list = data.get('interactions', [])
         interaction_set = set(frozenset(pair) for pair in interactions_list)
 
         labeled_idrs = []
-        
-        # Flags
         is_full_idp = False
         has_tail = False
         has_linker = False
@@ -121,9 +121,10 @@ def main():
             })
             type_counts[idr_type] += 1
             
-        # --- CASE B: Hybrid Proteins (Categories 1, 2, 3) ---
+        # --- CASE B: Hybrid Proteins ---
         else:
             f_domain_counter = 0
+            # If first residue is folded, start counter at 1. If disordered, start at 0? 
             if idrs[0][0] != 1: f_domain_counter += 1 
 
             for k, idr_range in enumerate(idrs):
@@ -167,11 +168,13 @@ def main():
                 })
                 type_counts[idr_type] += 1
 
-                # Update F-domain counter
+                # Update F-domain counter logic
                 is_last_idr = (k == len(idrs) - 1)
                 if not is_last_idr:
+                    # If there is a gap between this IDR and the next, there is a folded domain
                     if idrs[k+1][0] - end > 1: f_domain_counter += 1
                 elif not is_c_term:
+                    # If this is the last IDR but NOT the end of protein, a folded domain follows
                     f_domain_counter += 1
 
         # --- APPLY HIERARCHY ---
@@ -189,7 +192,6 @@ def main():
             final_category = 1
             count_cat_1 += 1
 
-        # Save to Dict
         data['labeled_idrs'] = labeled_idrs
         data['category'] = final_category
         processed_count += 1
@@ -198,27 +200,29 @@ def main():
 
     # 5. Save Output
     print(f"\nClassification complete. Saving to disk...")
-    os.makedirs(cfg.STEP_1_DIR, exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
 
     try:
-        with open(cfg.LABELED_DB_PATH, 'w') as f:
+        with open(labeled_db_path, 'w') as f:
             json.dump(master_db, f, indent=4)
-        print(f"[\u2713] Labeled DB saved: {cfg.LABELED_DB_PATH}")
+        print(f"[\u2713] Labeled DB saved: {labeled_db_path}")
     except IOError as e:
         print(f"[!] Error saving DB: {e}")
 
-    # 6. Write Summary Report
-    summary_path = cfg.SUMMARY_TEXT_PATH
+    t_end = time.time()
+
+    # 6. Summary
     print(f"[\u2713] Writing summary: {summary_path}")
 
     total_categorized = count_cat_0 + count_cat_1 + count_cat_2 + count_cat_3
 
     summary_text = [
         "--- IDR Classification Summary ---",
-        f"Source DB: {cfg.MASTER_DB_PATH}",
+        f"Source DB: {args.input_db}",
         "------------------------------------",
         f"Total Processed: {processed_count}",
         f"Total Skipped:   {skipped_count}",
+        f"Execution Time:  {t_end - t_start:.2f}s",
         "------------------------------------",
         f"Individual IDRs Found:",
         f"  - Full IDP:    {type_counts['IDP']}",
@@ -226,17 +230,10 @@ def main():
         f"  - Linker IDR:  {type_counts['Linker IDR']}",
         f"  - Loop IDR:    {type_counts['Loop IDR']}",
         "\n--- Hierarchical Categorization ---",
-        "[Category 3] Loops:",
-        f"  - {count_cat_3} proteins",
-        "",
-        "[Category 2] Linkers:",
-        f"  - {count_cat_2} proteins",
-        "",
-        "[Category 1] Tails:",
-        f"  - {count_cat_1} proteins",
-        "",
-        "[Category 0] Full IDPs:",
-        f"  - {count_cat_0} proteins",
+        f"[Category 3] Loops:   {count_cat_3}",
+        f"[Category 2] Linkers: {count_cat_2}",
+        f"[Category 1] Tails:   {count_cat_1}",
+        f"[Category 0] Full IDPs: {count_cat_0}",
         "------------------------------------",
         f"Total Categorized: {total_categorized}"
     ]
@@ -247,4 +244,14 @@ def main():
     print("\n" + "\n".join(summary_text) + "\n")
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Step 1: IDR Classification & Case Labeling")
+    parser.add_argument("--input_db", default=cfg.MASTER_DB_PATH,
+                        help=f"Path to the master database JSON (default: {cfg.MASTER_DB_PATH}).")
+    parser.add_argument("--length_ref", default=cfg.LENGTH_REF_PATH,
+                        help=f"Path to the residue-count reference JSON (default: {cfg.LENGTH_REF_PATH}).")
+    parser.add_argument("--output_dir", default=cfg.STEP_1_DIR,
+                        help=f"Output directory for labeled DB and summary (default: {cfg.STEP_1_DIR}).")
+    parser.add_argument("--verbose", action="store_true", default=cfg.VERBOSE,
+                        help="Enable detailed per-protein logging.")
+    args = parser.parse_args()
+    main(args)

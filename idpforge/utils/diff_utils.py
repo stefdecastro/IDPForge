@@ -184,6 +184,15 @@ def get_next_frames(xt, px0, t, diffuser, diffusion_mask, noise_scale=1.0):
     R_t = rigid_from_3_points_np(xt).reshape(-1, 3, 3)
     Ca_t = xt[..., 1, :]
 
+    # Replace degenerate rotation matrices (det ~ 0) with identity.
+    # This can happen early in training when the model predicts
+    # collinear or coincident N/Ca/C atoms.
+    for R in [R_0, R_t]:
+        dets = np.linalg.det(R)
+        bad = np.abs(dets) < 1e-6
+        if np.any(bad):
+            R[bad] = np.eye(3)
+
     R_0 = scipy_R.from_matrix(R_0).as_matrix().reshape(B, L, 3, 3)
     R_t = scipy_R.from_matrix(R_t).as_matrix().reshape(B, L, 3, 3)
     all_rot_transitions = np.tile(np.identity(3), (B, L, 1, 1))

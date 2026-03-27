@@ -6,16 +6,13 @@ general:
   batch_save_freq: 2
   epoch_save_freq: 5
 data:
-  path: data/
-  idpseq:
-  - example_data
-  train_size: 
-  - 0.5
-  val_size: 
-  - 0.1
+  train_path: 
+  - Training/filtered_idp_train_30pct.pkl 
+  - Training/filtered_casp12_30pct.pkl
+  val_path: 
+  - Training/filtered_idp_val_30pct.pkl
   tr_batch_size: 16
   val_batch_size: 64
-  test_batch_size: 64
 training:
   lr_scheduler:
     max_lr: 0.001
@@ -24,26 +21,29 @@ training:
     decay_every_n_steps: 5000
   ema_decay: 0.99
   trainer:
-    gradient_clip_val: 0.2
+    gradient_clip_val: 0.1
     accumulate_grad_batches: 4
     accelerator: gpu
-    devices: 2
+    devices: 1
     max_epochs: 100
     num_sanity_val_steps: 0
   diff_pkl: data/diff_igso3.pkl
   loss:
     weights:
       fape: 1
-      dist: 0.002
+      dist: 0.005
       angular: 0.1
-      violation: 0
+      violation: 0.01
     fape:
       use_clamp: 0.5
       clamp_distance: 10
     dist:
+      start_epoch: 50
       loop_clamp: 10
       sidechain: 0
       sidechain_clamp: 8
+    violation_cfg:
+      start_epoch: 80
 diffuse:
   n_tsteps: 200
   n_tsteps_inf: 40

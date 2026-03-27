@@ -77,7 +77,8 @@ Once flash-attn is uninstalled, proceed into `IDPForge/` and `openfold/` and ins
 ``` bash
 cd IDPForge/
 pip install -e .
-cd openfold/
+
+cd ../openfold/
 pip install -e .
 ```
 > Note: If `pip install -e .` does not work, proceed with `pip install . --no-build-isolation` instead.

@@ -39,6 +39,18 @@ configs/aflex_ldr.yml
 data/example_*
 data/diff_igso3.pkl
 
+# Data & Outputs #
+##################
+*.pdb
+*.csv
+Training/
+Testing/
+AlphaFlex/Pipeline_Outputs/
+AlphaFlex/Analysis/
+AlphaFlex/Data_Inputs/AF2_*/
+.claude/
+CLAUDE.md
+
 # Junk #
 ########
 .DS_Store*

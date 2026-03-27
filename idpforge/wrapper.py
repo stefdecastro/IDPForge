@@ -72,7 +72,8 @@ class IDPForgeWrapper(pl.LightningModule):
         output["sstype"] = batch["ss"]
         loss, loss_breakdown = self.loss_fn(output,
                 batch["frame"], batch["coord"], batch["torsion"],
-                self.config['training']['loss'])
+                self.config['training']['loss'],
+                current_epoch=self.trainer.current_epoch)
                 
         # Log it
         loss_breakdown["loss"] = loss
@@ -106,7 +107,7 @@ class IDPForgeWrapper(pl.LightningModule):
             self._log_pdbs(output, batch, batch_idx, False) 
 
 
-    def validation_epoch_end(self, _):
+    def on_validation_epoch_end(self):
         # Restore the model weights to normal
         self.model.load_state_dict(self.cached_weights)
         self.cached_weights = None
