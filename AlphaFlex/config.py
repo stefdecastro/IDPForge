@@ -12,7 +12,7 @@ import sys
 # =============================================================================
 # True  = Print every step (debugging / small batches)
 # False = Progress bar only (HPC / large batches)
-VERBOSE = False
+VERBOSE = True
 
 # =============================================================================
 # GLOBAL PATHS
@@ -77,7 +77,7 @@ CONFORMER_POOL_DIR = os.path.join(PIPELINE_OUTPUT_ROOT, "Step_3_Raw_Conformers")
 
 # Generation
 SAMPLE_N_CONFS = 10                    # target validated conformers per IDR
-SAMPLE_BATCH_SIZE = 12                 # diffusion batch size per generation round
+SAMPLE_BATCH_SIZE = 6                  # diffusion batch size per generation round
 SAMPLE_MAX_TOTAL_ATTEMPTS = 500        # max validation attempts before giving up
 DEVICE = "cuda"                        # "cuda" or "cpu"
 
