@@ -12,74 +12,176 @@ To get started, this repository must be cloned using the following command:
 
 Following that, the working conda environment can be established in two ways.
 
-### Installation via. IDPForge
+### IDPForge Main Installation Protocol
+
+First, navigate to the new `IDPForge` directory:
+
+``` bash
+1. cd IDPForge
+```
 
 The base environment can be built manually via the `environment.yml` file in the repo. To do this, run the following command:
 
 ``` bash
-conda env create -f environment.yml
+2. conda env create -f environment.yml
+```
 
-pip install -e .
+Once the environment is created, activate it.
+
+``` bash
+3. conda activate IDPForge
+```
+
+Then install IDPForge as a module in the environment.
+
+``` bash
+4. pip install -e .
 ```
 
 > Note: The default file is set to install `torch==2.5.1 and cuda==12.1` for earlier GPUs (sm_60 - sm_80). Optionally, this may be changed to install `torch==2.7.1 and cuda==12.8` for later generation GPUs (sm_60 - sm_120). Refer to the comments in the file for modification instructions. 
 
-This repo also requires OpenFold utilities, so that repository must be cloned in the same directory as IDPForge using the following command:
-
-``` bash 
-git clone https://github.com/aqlaboratory/openfold.git
-```
-
-Once the repository is cloned, proceed into the `openfold/openfold/resources` directory and run the following code: 
+This repo also requires `OpenFold` utilities, so that repository must be cloned in the same directory as IDPForge. To do this, first navigate to the parent directory.
 
 ``` bash
-wget https://git.scicore.unibas.ch/schwede/openstructure/-/raw/7102c63615b64735c4941278d92b554ec94415f8/modules/mol/alg/src/stereo_chemical_props.txt
+5. cd ../
 ```
 
-Once this is done, proceed back to `openfold/` and do the following:
+Then clone the OpenFold repository into the parent directory.
 
-1. Replace the `setup.py` provided with either of the `openfold_setup_12.X.py` files found in the `IDPForge/dockerfiles directory` corresponding to cuda version chosen earlier. 
+``` bash 
+6. git clone https://github.com/aqlaboratory/openfold.git
+```
 
-2. Rename it as `setup.py` within the openfold repository.
+Once the repository is cloned, proceed into the resources of OpenFold.
 
-3. Install it via `pip install -e .`. 
+``` bash
+7. cd openfold/openfold/resources
+```
+
+In there, download the following file.  
+
+``` bash
+8. wget https://git.scicore.unibas.ch/schwede/openstructure/-/raw/7102c63615b64735c4941278d92b554ec94415f8/modules/mol/alg/src/stereo_chemical_props.txt
+```
+
+Once this is done, navigate back into the main OpenFold directory.
+
+``` bash
+9. cd ../../
+```
+
+The OpenFold setup must be replaced. To do this, first locate the 2 setup replacements provided with the IDPForge repository.
+
+``` bash
+10. ls path/to/my/IDPForge/dockerfiles/openfold_setup_12*
+```
+
+> Note: The output should look like the following:
+*path/to/my/IDPForge/dockerfiles/openfold_setup_12.1.py*
+*path/to/my/IDPForge/dockerfiles/openfold_setup_12.8.py*
+
+Then copy `openfold_setup_12.1.py` into the OpenFold directory as the new `setup.py`.
+
+``` bash
+11. cp path/to/my/IDPForge/dockerfiles/openfold_setup_12.1.py path/to/my/openfold/setup.py
+```
+
+> Note: If the alternative installation was chosen in Step 3, copy the `openfold_setup_12.8.py` version instead.
+
+Finally, install OpenFold as a module in the environment.
+
+``` bash
+12. pip install -e .
+```
 
 This makes the environment fully ready for use.
 
-### Installation via. OpenFold
+### Alternative Installation for Compute Cluster
 
 If you have issues setting up the base environment from the yml file, or if you are setting IDPForge up for use on an HPC cluster, it is recommended to follow the installation by openfold. To do this, start by cloning both repositories in the same directory.
 
 ``` bash
-git clone https://github.com/THGLab/IDPForge.git
-
-git clone https://github.com/aqlaboratory/openfold.git
+1. git clone https://github.com/THGLab/IDPForge.git
 ```
 
-Then proceed into `openfold/` activate the OpenFold environment using the following command:
-
 ``` bash
-mamba env create -n openfold_env -f environment.yml
+2. git clone https://github.com/aqlaboratory/openfold.git
 ```
 
-> Note: This can also be run with `conda env create -n openfold_env -f environment.yml`
-
-Install other dependencies required by IDPForge using the following command:
+Then navigate into the OpenFold directory.
 
 ``` bash
-conda install einops mdtraj -c conda-forge
+3. cd openfold/
 ``` 
 
-It is also recommended to uninstall flash-attn via `pip uninstall flash-attn` when starting out if this installation pathway is chosen.
-
-Once flash-attn is uninstalled, proceed into `IDPForge/` and `openfold/` and install IDPForge and openfold as modules in the environment using the following commands:
+Create the OpenFold environment using the following command.
 
 ``` bash
-cd IDPForge/
-pip install -e .
+4. mamba env create -n openfold_env -f environment.yml
+```
+> Note: This can also be run with `conda env create -n openfold_env -f environment.yml`
 
-cd ../openfold/
-pip install -e .
+Then activate the environment.
+
+```bash
+5. conda activate openfold_env
+```
+
+Install other dependencies required by IDPForge using the following commands:
+
+``` bash
+6. conda install einops mdtraj pdb-tools -c conda-forge
+``` 
+
+``` bash
+7. conda install mmseqs2 -c bioconda
+``` 
+
+``` bash
+8. pip install tensorboard topoly
+``` 
+
+It is also recommended to uninstall flash-attn when starting out if this installation pathway is chosen.
+
+``` bash
+9. pip uninstall flash-attn
+```
+
+Once flash-attn is uninstalled, navigate into the resources of Openfold.
+
+```bash
+10. cd openfold/resources
+```
+
+In there, download the following file.  
+
+``` bash
+11. wget https://git.scicore.unibas.ch/schwede/openstructure/-/raw/7102c63615b64735c4941278d92b554ec94415f8/modules/mol/alg/src/stereo_chemical_props.txt
+```
+
+Navigate back to the main directory of OpenFold.
+
+```bash
+12. cd ../../
+```
+
+Install OpenFold as a module in the environment.
+
+``` bash
+13. pip install -e .
+```
+> Note: If `pip install -e .` does not work, proceed with `pip install . --no-build-isolation` instead.
+
+Navigate to the IDPForge directory.
+
+``` bash
+14. cd ../IDPForge
+```
+
+Install IDPForge as a module.
+
+``` bash
+15. pip install -e .
 ```
 > Note: If `pip install -e .` does not work, proceed with `pip install . --no-build-isolation` instead.
 
