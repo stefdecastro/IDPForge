@@ -7,10 +7,9 @@ general:
   epoch_save_freq: 5
 data:
   train_path: 
-  - Training/filtered_idp_train_30pct.pkl 
-  - Training/filtered_casp12_30pct.pkl
+  - data/
   val_path: 
-  - Training/filtered_idp_val_30pct.pkl
+  - data/
   tr_batch_size: 16
   val_batch_size: 64
 training:

@@ -87,6 +87,12 @@ This makes the environment fully ready for use.
 
 > Note: For more information on OpenFold installation, please refer to the installation guide. https://openfold.readthedocs.io/en/latest/Installation.html
 
+## Downloading model weights and other files
+
+Models weights, example training data, and other inference input files can be downloaded from [Figshare](https://doi.org/10.6084/m9.figshare.28414937). 
+
+It is recommended to copy the `weights/` directory directly into the IDPForge repository as `IDPForge/weights/`. Similarly, the contents of `data/` can be copied into the given `IDPForge/data/` directory.
+
 ## Notes on ESM2 and Attention
 
 ESM2 utilities are refactored into this repo for network modules and exploring the effects of ESM embedding on IDP modeling. Alternatively, it can be installed from their github https://github.com/facebookresearch/esm.git, or via pip install `pip install fair-esm`.
@@ -94,7 +100,7 @@ ESM2 utilities are refactored into this repo for network modules and exploring t
 Optional: `pip install flash-attn==2.3` to speed up attention calculation.
 
 ## Using Docker
-IDPForge can also be built as a docker container using either of the included dockerfiles (Blackwell or Ampere). Blackwell runs on CUDA12.8 and Ampere runs on CUDA12.1. Models weights and an example training data and other inference input files can be downloaded from [Figshare](https://doi.org/10.6084/m9.figshare.28414937). Optionally, the files may be merged before the creation of the image. This will ensure the image contains the merged files, removing the need for additional /weights and /data mounting.
+IDPForge can also be built as a docker container using either of the included dockerfiles (Blackwell or Ampere). Blackwell runs on CUDA12.8 and Ampere runs on CUDA12.1. Optionally, the training weights and data files from [Figshare](https://doi.org/10.6084/m9.figshare.28414937) may be merged before the creation of the image. This will ensure the image contains the merged files, removing the need for additional /weights and /data mounting.
 
 To build the image, run the following command from the root of this repository choosing either Blackwell or Ampere based on preference:
 ```bash
