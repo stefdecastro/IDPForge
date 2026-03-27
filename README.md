@@ -314,12 +314,15 @@ We use UCBShift for chemical shift prediction and can be installed at https://gi
 
 ## Citation
 ```bibtex
-@article{zhang2025,
-  author    = {Zhang, Oufan and Liu, Zi-Hao and Forman-Kay, Julie D. Head-Gordon, Teresa},
-  title     = {Deep Learning of Proteins with Local and Global Regions of Disorder},
-  journal   = {arXiv preprint},
-  year      = {2025},
-  archivePrefix = {arXiv},
-  eprint    = {2502.11326},
+@article {DeCastro2026,
+	author = {De Castro, Stefano and Zhang, Oufan and Liu, Zi Hao and Forman-Kay, Julie Deborah and Head-Gordon, Teresa},
+	title = {IDPForge: Deep Learning of Proteins with Global and Local Regions of Disorder},
+	elocation-id = {2026.03.25.714313},
+	year = {2026},
+	doi = {10.64898/2026.03.25.714313},
+	publisher = {Cold Spring Harbor Laboratory},
+	URL = {https://www.biorxiv.org/content/early/2026/03/27/2026.03.25.714313},
+	eprint = {https://www.biorxiv.org/content/early/2026/03/27/2026.03.25.714313.full.pdf},
+	journal = {bioRxiv}
 }
 ```
