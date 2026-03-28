@@ -10,142 +10,103 @@ import sys
 # =============================================================================
 # LOGGING CONTROL
 # =============================================================================
-# True  = Print every step (Good for debugging or small batches)
-# False = Only print errors and progress summaries every 100 items
+# True  = Print every step (debugging / small batches)
+# False = Progress bar only (HPC / large batches)
 VERBOSE = True
 
 # =============================================================================
 # GLOBAL PATHS
 # =============================================================================
-
-# --- External Scripts Configuration ---
-PYTHON_EXEC = sys.executable 
-
-# Current Project Root Directory (Where this config file lives)
+PYTHON_EXEC = sys.executable
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-
-# Define the Parent Directory (One level up from where this config file lives)
 PARENT_DIR = os.path.dirname(PROJECT_ROOT)
 
-# Input Data Directory (Where Step 0 outputs live)
 INPUT_DATA_DIR = os.path.join(PROJECT_ROOT, "Data_Inputs")
-MASTER_DB_PATH = os.path.join(INPUT_DATA_DIR, "AlphaFlex_database_Jul2024.json")
+MASTER_DB_PATH = os.path.join(INPUT_DATA_DIR, "AlphaFlex_database_Nov2025.json")
 LENGTH_REF_PATH = os.path.join(INPUT_DATA_DIR, "AF2_9606_HUMAN_v4_num_residues.json")
 PDB_LIBRARY_PATH = os.path.join(INPUT_DATA_DIR, "Test_Structures")
 
-# Main Output Directory (All steps will write subfolders here)
 PIPELINE_OUTPUT_ROOT = os.path.join(PROJECT_ROOT, "Pipeline_Outputs")
 
 # =============================================================================
-# STEP 1: CASE LABELING SETTINGS
+# STEP 1: CASE LABELING
 # =============================================================================
-
-# Directory for Step 1 results
 STEP_1_DIR = os.path.join(PIPELINE_OUTPUT_ROOT, "Step_1_Labeling")
-
-# The crucial JSON that drives Steps 2-4
-LABELED_DB_PATH = os.path.join(STEP_1_DIR, "Labeled_AlphaFlex_database_Jul2024.json")
+LABELED_DB_PATH = os.path.join(STEP_1_DIR, "Labeled_AlphaFlex_database_Nov2025.json")
 SUMMARY_TEXT_PATH = os.path.join(STEP_1_DIR, "idr_type_summary.txt")
 
 # =============================================================================
-# STEP 1B: SUBSET SAMPLING SETTINGS
+# STEP 1B: SUBSET FILTERING
 # =============================================================================
+ID_LISTS_OUTPUT_ROOT = STEP_1_DIR
+SUBSET_OUTPUT_NAME = "test_subset"     # base filename for output files
 
-# Directory to save the generated ID lists
-ID_LISTS_OUTPUT_ROOT = os.path.join(STEP_1_DIR, "id_lists") 
+# Basic filter (always active)
+SUBSET_MIN_LENGTH = 0
+SUBSET_MAX_LENGTH = 250
 
-# Filtering Criteria
-SUBSET_MIN_LENGTH = 0        # Lower bound of protein size (inclusive)
-SUBSET_MAX_LENGTH = 250 # Upper bound of protein size (inclusive)
-SUBSET_SAMPLE_SIZE = 100000  # Max proteins to pick per category
+# Advanced filters (optional: None = inactive / unconstrained)
+SUBSET_TAIL_COUNT = 2                  # required Tail IDR count (None = unconstrained)
+SUBSET_LINKER_COUNT = 1                # required Linker IDR count (None = unconstrained)
+SUBSET_LOOP_COUNT = 1                  # required Loop IDR count (None = unconstrained)
+SUBSET_EXACT_COUNT = True              # True = exact match, False = minimum match
+SUBSET_IDR_MIN_LENGTH = None           # min IDR length applied to all IDRs (None = no filter)
+SUBSET_IDR_MAX_LENGTH = None           # max IDR length applied to all IDRs (None = no filter)
+SUBSET_MAX_SAMPLES = None              # None = no cap; integer = random subsample
 
 # =============================================================================
-# STEP 2: TEMPLATE GENERATION SETTINGS
+# STEP 2: TEMPLATE GENERATION
 # =============================================================================
-
-# Directory where .npz templates will be saved
 TEMPLATE_OUTPUT_DIR = os.path.join(PIPELINE_OUTPUT_ROOT, "Step_2_Templates")
 IDP_CASES_LIST_PATH = os.path.join(TEMPLATE_OUTPUT_DIR, "idp_cases_to_run.json")
 
-# Input ID Lists for Step 2 (Points to the specific batch folder from Step 1B)
-# Note: You must update the folder name manually if you change the range above!
-CURRENT_BATCH_FOLDER = f"{SUBSET_MIN_LENGTH}-{SUBSET_MAX_LENGTH}AA"
+CURRENT_BATCH_FOLDER = "custom_subsets"
 ID_LISTS_DIR = os.path.join(ID_LISTS_OUTPUT_ROOT, CURRENT_BATCH_FOLDER)
 
-# Point to scripts in the parent directory
 SCRIPT_STATIC_TEMPLATE = os.path.join(PARENT_DIR, "mk_ldr_template.py")
-SCRIPT_FLEX_TEMPLATE   = os.path.join(PARENT_DIR, "mk_flex_template.py")
+SCRIPT_FLEX_TEMPLATE = os.path.join(PARENT_DIR, "mk_flex_template.py")
 
-# Generation Parameters
-TEMPLATE_N_CONFS = 200          # Number of dummy conformers for the template
-TIMEOUT_STATIC_TEMPLATE = 60    # Seconds
-TIMEOUT_DYNAMIC_TEMPLATE = 1000 # Seconds
+TEMPLATE_N_CONFS = 200
+TIMEOUT_STATIC_TEMPLATE = 60           # seconds
+TIMEOUT_DYNAMIC_TEMPLATE = 1000        # seconds
 
 # =============================================================================
-# STEP 3 INPUTS: MODEL WEIGHTS & DATABASES
+# STEP 3: CONFORMER GENERATION
 # =============================================================================
-
-# Directory where raw conformers will be saved
 CONFORMER_POOL_DIR = os.path.join(PIPELINE_OUTPUT_ROOT, "Step_3_Raw_Conformers")
 
-# Sampling Parameters
-SAMPLE_N_CONFS = 10      # Target conformers per IDR
-SAMPLE_BATCH_SIZE = 4    # Batch size (lower if GPU OOM)
-DEVICE = "cuda"          # 'cuda' or 'cpu'
+# Generation
+SAMPLE_N_CONFS = 10                    # target validated conformers per IDR
+SAMPLE_BATCH_SIZE = 6                  # diffusion batch size per generation round
+SAMPLE_MAX_TOTAL_ATTEMPTS = 500        # max validation attempts before giving up
+DEVICE = "cuda"                        # "cuda" or "cpu"
 
-# Path to the external sampling script
+# Model paths
 SCRIPT_SAMPLE_LDR = os.path.join(PARENT_DIR, "sample_ldr.py")
-
-# Model Weights & Configs
 MODEL_WEIGHTS_PATH = os.path.join(PARENT_DIR, "weights", "mdl.ckpt")
-MODEL_CONFIG_PATH  = os.path.join(PARENT_DIR, "configs", "sample.yml")
-
-# Path to the Secondary Structure database
+MODEL_CONFIG_PATH = os.path.join(PARENT_DIR, "configs", "sample.yml")
 SS_DB_PATH = os.path.join(PARENT_DIR, "data", "example_data.pkl")
 
-# Optional: Limit residue count to prevent OOM errors on GPU
-MAX_RESIDUE_LIMIT = 1000 
-ATTENTION_CHUNK_SIZE = 0  # 0 = Auto/None. Set to 32 or 64 if running out of GPU memory.
-
 # =============================================================================
-# 4. STEP 4: STITCHING & RELAXATION
+# STEP 4: STITCHING & RELAXATION
 # =============================================================================
-import glob
-
-# 1. PATHS
-# -----------------------------------------------------------------------------
-# Where to save the final models
 STITCH_OUTPUT_ROOT = os.path.join(PIPELINE_OUTPUT_ROOT, "Step_4_Final_Models")
 
-# Min number of conformers needed from Step 3 to proceed
-MIN_CONFORMER_POOL_SIZE = 10 # Will not sample from conformer directories containing less than this value.
+# Stitching
+STITCH_N_CONFORMERS = 10               # target ensemble conformers per protein
+STITCH_MAX_ATTEMPTS = 500              # max stitching attempts before giving up
 
-# How many final models to generate
-STITCH_N_CONFORMERS = 10 # Target number of final models per IDR.
+# AMBER relaxation (folded domains restrained, IDRs free)
+RELAX_STIFFNESS = 10.0                 # harmonic restraint strength on folded residues
+RELAX_MAX_OUTER_ITER = 20              # outer iteration limit for relaxation
+MINIMIZATION_MAX_ITER = 0              # L-BFGS iterations (0 = OpenMM default)
+MINIMIZATION_TOLERANCE = 10.0          # energy convergence tolerance (kJ/mol/nm)
 
-# Alignment settings
-ALIGNMENT_STUB_HALF_SIZE = 5 # Stub will be the midpoint +/− this size. Default: 5 (Stub = 11 Residues)
-ALIGNMENT_JUNCTION_SIZE = 10 # If the folded domain is smaller than this (< 11 residues), use the full domain (Default: 10 residues).
+# Alignment / stitching geometry
+ALIGNMENT_STUB_HALF_SIZE = 5           # half-window (residues) around junction midpoint for alignment
+ALIGNMENT_JUNCTION_SIZE = 5            # fallback junction stub size if stub window is too small
+MIN_CONFORMER_POOL_SIZE = 5            # warn if fewer conformers per IDR (stitching still proceeds)
 
-# Relaxation settings mapped into the dictionary structure Step 4 expects
-RELAX_STIFFNESS = 10.0        # Folded domain stiffness
-RELAX_MAX_OUTER_ITER = 20     # Max iterations for the outer loop
-MINIMIZATION_MAX_ITER = 0     # Max iterations for the inner loop (0 = no limit)
-MINIMIZATION_TOLERANCE = 10.0 # Tolerance for the inner loop minimization
-
-# The dictionary Step 4 looks for:
-AF2_RELAX_CONFIG = {
-    'max_outer_iterations': RELAX_MAX_OUTER_ITER,
-    'stiffness': RELAX_STIFFNESS,
-    'exclude_residues': [], # Filled dynamically during run
-    'max_iterations': MINIMIZATION_MAX_ITER,
-    'tolerance': MINIMIZATION_TOLERANCE
-}
-
-# Clash detection logic
-STITCH_MAX_ATTEMPTS = 1_000_000 # Max attempts to find a stitched model before giving up.
-STITCH_CLASHSCORE = 5.0         # Base clash score threshold  
-CLASH_RELAX_INCREMENT = 2.5     # Increase by this amount every 5000 stitch attempts.
-
-# Output behavior
-COMBINE_ENSEMBLE = True # If True, merges all PDBs into one multi-model file at the end
+# Adaptive clash scoring
+STITCH_BASE_CLASH_THRESHOLD = 10.0     # starting clash score threshold
+STITCH_CLASH_INCREMENT = 5.0           # threshold increase per escalation step

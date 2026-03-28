@@ -7,7 +7,7 @@ import os.path
 import torch
 import pickle
 import numpy as np
-from torch.utils.data import Dataset, DataLoader, ConcatDataset, random_split
+from torch.utils.data import Dataset, DataLoader, ConcatDataset
 from pytorch_lightning import LightningDataModule
 
 from esm.esmfold.misc import collate_dense_tensors
@@ -17,9 +17,6 @@ from idpforge.misc import input_process
 from idpforge.utils.diff_utils import Diffuser
 from idpforge.utils.tensor_utils import get_dih, torsion_angles_to_frames
 
-
-def list_index(x, indices):
-    return [x[i] for i in indices]
 
 class BatchCollator:
     def __call__(self, batch):
@@ -50,7 +47,7 @@ class BatchCollator:
     
 
 class DiffDataset(Dataset):
-    def __init__(self, ss, sequence, coords, diffuser, train=False, contact_cutoff=0):
+    def __init__(self, diffuser, ss, sequence, coords, *extra, train=False):
         super(DiffDataset).__init__()
         self.template_diffuser = diffuser
         self.sequence = sequence
@@ -58,7 +55,6 @@ class DiffDataset(Dataset):
         self.c = coords
         self.tstep = diffuser.T
         self.training = train
-        self.contact_cutoff = contact_cutoff
     
     def __len__(self):
         return len(self.sequence)
@@ -102,76 +98,45 @@ class DiffDataset(Dataset):
     
 
 class IDPloader(LightningDataModule):
-    def __init__(self, load_path, diffuser,
-                 train_size, val_size, 
-                 tr_batch_size, val_batch_size, test_batch_size, 
-                 contact_cutoff=10, split_seed=42, num_workers=12):
+    def __init__(self, diffuser,
+                 train_path, val_path,
+                 tr_batch_size, val_batch_size,
+                 split_seed=42, num_workers=12):
         super().__init__()
-        self.load_path = load_path
-        self.train_size = train_size
-        self.val_size = val_size
+        self.train_path = train_path
+        self.val_path = val_path
         self.tr_batch_size = tr_batch_size
         self.val_batch_size = val_batch_size
-        self.test_batch_size = test_batch_size
         self.split_seed = split_seed
         self.nworkers = num_workers
         self.diffuser = diffuser
-        self.contact_cutoff = contact_cutoff
         self.collate_fn = BatchCollator()
-            
+
     def setup(self, stage=None):
         tr_dat = []
         val_dat = []
-        test_dat = []
-        
-        for i, p in enumerate(self.load_path):
-            with open(p, "rb") as f:
-                ss, sequence, coords = pickle.load(f)
-            train_size, val_size = self.train_size, self.val_size
-            if isinstance(train_size, list):
-                train_size = self.train_size[i]
-            if isinstance(val_size, list):
-                val_size = self.val_size[i]
-            if val_size + train_size > 1:
-                val_size = 0.99 - train_size
-      
-            tr, val, test = random_split(np.arange(len(ss)), [int(len(ss)*train_size), 
-                int(len(ss)*val_size), len(ss) - int(len(ss)*train_size) - int(len(ss)*val_size)])
-                            
-            if stage == "fit" or stage is None:
-                tr_dat.append(DiffDataset(list_index(ss, tr), list_index(sequence, tr), 
-                        list_index(coords, tr), self.diffuser, train=True))
-                val_dat.append(DiffDataset(list_index(ss, val), list_index(sequence, val), 
-                        list_index(coords, val), self.diffuser)) 
-            if stage == "test" or stage is None:
-                test_dat.append(DiffDataset(list_index(ss, test), list_index(sequence, test), 
-                        list_index(coords, test), self.diffuser))
-            
-        if len(tr_dat) > 1:
-            self.train = ConcatDataset(tr_dat)
-            self.val = ConcatDataset(val_dat)
-        elif len(tr_dat) == 1:
-            self.train = tr_dat[0]
-            self.val = val_dat[0]
-        #print(len(self.train), len(self.val))
-        
-        if len(test_dat) > 1:
-            self.test = ConcatDataset(test_dat)
-        elif len(test_dat) == 1:
-            self.test = test_dat[0]
-        
+
+        for flag, pathlist in enumerate([self.train_path, self.val_path]):
+            if isinstance(pathlist, os.PathLike):
+                pathlist = [pathlist]
+            for _, p in enumerate(pathlist):
+                with open(p, "rb") as f:
+                    data = pickle.load(f)
+                if flag == 0 and (stage == "fit" or stage is None):
+                    tr_dat.append(DiffDataset(self.diffuser, *data, train=True))
+                if flag == 1 and (stage == "fit" or stage is None):
+                    val_dat.append(DiffDataset(self.diffuser, *data))
+
+        self.train = ConcatDataset(tr_dat) if len(tr_dat) > 1 else tr_dat[0]
+        self.val = ConcatDataset(val_dat) if len(val_dat) > 1 else val_dat[0]
+
     def train_dataloader(self):
-        return DataLoader(self.train, self.tr_batch_size, shuffle=True, 
-            collate_fn=self.collate_fn, #drop_last=True, 
+        return DataLoader(self.train, self.tr_batch_size, shuffle=True,
+            collate_fn=self.collate_fn, #drop_last=True,
             pin_memory=True, num_workers=self.nworkers)
-        
+
     def val_dataloader(self):
-        return DataLoader(self.val, self.val_batch_size, 
+        return DataLoader(self.val, self.val_batch_size,
             collate_fn=self.collate_fn,
             num_workers=self.nworkers)
-        
-    def test_dataloader(self):
-        return DataLoader(self.test, self.test_batch_size, 
-            collate_fn=self.collate_fn,
-            num_workers=self.nworkers)
-        
+
