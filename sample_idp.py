@@ -111,9 +111,23 @@ def main(sequence, ckpt_path, output_dir, sample_cfg,
     os.makedirs(output_dir, exist_ok=True)
     abs_output_dir = os.path.abspath(output_dir)
 
-    # Determine start index from existing files
-    existing = glob(os.path.join(abs_output_dir, search_pattern))
-    current_count = len(existing)
+    def count_done():
+        return len(glob(os.path.join(abs_output_dir, search_pattern)))
+
+    def next_available_idx():
+        """Find the smallest positive integer not already used."""
+        existing_files = glob(os.path.join(abs_output_dir, search_pattern))
+        used = set()
+        for f in existing_files:
+            base = os.path.basename(f).split("_")[0]
+            if base.isdigit():
+                used.add(int(base))
+        idx = 1
+        while idx in used:
+            idx += 1
+        return idx
+
+    current_count = count_done()
     print(f"[idp] Found {current_count} existing files. Target: {nsample}", flush=True)
 
     # 9. Generation Loop
@@ -126,14 +140,18 @@ def main(sequence, ckpt_path, output_dir, sample_cfg,
         ss_list = random.sample(ss, chunk)
         xt_list, tor_list = denoiser.init_samples(seq_list)
 
-        print(f"[idp] Generating batch of {chunk} (progress: {current_count}/{nsample})...", flush=True)
+        start_idx = next_available_idx()
+        print(f"[idp] Generating batch of {chunk} starting at idx {start_idx} "
+              f"(progress: {current_count}/{nsample})...", flush=True)
         with torch.no_grad():
             outputs = model.sample(denoiser, seq_list, ss_list, tor_list, xt_list,
                     potential_cfgs=potential_cfg)
 
         output_to_pdb(outputs, relax=relax_opts,
-                save_path=abs_output_dir, counter=current_count+1, counter_cap=nsample)
-        current_count += chunk
+                save_path=abs_output_dir, counter=start_idx, counter_cap=nsample)
+
+        # Re-count actual files on disk (some conformers may be rejected by relaxation)
+        current_count = count_done()
 
     print(f"[idp] Generation Complete. {current_count} conformers in {abs_output_dir}")
 
