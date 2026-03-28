@@ -126,7 +126,24 @@ def output_to_pdb(
     written_files = []
     file_idx = counter
 
+    # Build set of indices that already have relaxed files (to skip gaps only)
+    existing_indices = set()
+    if save_path is not None:
+        from glob import glob as _glob
+        for f in _glob(os.path.join(save_path, "*_relaxed.pdb")):
+            base = os.path.basename(f).split("_")[0]
+            if base.isdigit():
+                existing_indices.add(int(base))
+
     for i in select_idx:
+        if counter_cap is not None and file_idx > counter_cap:
+            break
+
+        # Skip indices that already have a relaxed file
+        while file_idx in existing_indices:
+            file_idx += 1
+            if counter_cap is not None and file_idx > counter_cap:
+                break
         if counter_cap is not None and file_idx > counter_cap:
             break
 
@@ -173,6 +190,9 @@ def output_to_pdb(
                 **kwargs
             )
             relaxed_files.append(os.path.join(save_path, stem + "_relaxed.pdb"))
+            # Clean up raw file after relaxation
+            if os.path.isfile(raw_path):
+                os.remove(raw_path)
         return relaxed_files
 
     return written_files
