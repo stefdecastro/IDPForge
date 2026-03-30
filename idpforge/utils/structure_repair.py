@@ -1,6 +1,8 @@
 """
-utils/pre_minimization.py
-Pre-minimization structural repairs for the IDPForge pipeline.
+idpforge/utils/structure_repair.py
+
+Pre-relaxation structural repairs for the IDPForge pipeline.
+
 Core functionality:
   - Detecting and repairing D-amino acid chirality flips.
   - Fixing scrambled histidine imidazole ring atom naming after AMBER relaxation.

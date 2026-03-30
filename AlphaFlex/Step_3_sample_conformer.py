@@ -33,9 +33,9 @@ if ROOT_DIR not in sys.path:
 try:
     import config as cfg
     from utils.smart_scoring import get_smart_threshold
-    from utils.pre_minimization import repair_chirality, fix_histidine_naming
-    from utils.post_minimization import (validate_structure_post_relax,
-                                         check_bond_integrity)
+    from idpforge.utils.structure_repair import repair_chirality, fix_histidine_naming
+    from idpforge.utils.structure_validation import (validate_structure_post_relax,
+                                                     check_bond_integrity)
     from utils.file_ops import atomic_transfer
 
     from openfold.np import protein
@@ -125,12 +125,11 @@ def _cleanup_dir(output_dir):
 # ------------------------------------------------------------------------
 def generate_conformers(npz_path, output_dir, num_to_generate, verbose=False):
     """
-    Calls sample_ldr.py (with relaxation) to produce N_relaxed.pdb files.
-    HIS hydrogen stripping and AMBER minimization happen inside sample_ldr.
-    Returns list of relaxed file paths created.
+    Calls sample_ldr.py to generate, relax, repair, and validate conformers.
+    Returns list of validated file paths.
     """
-    # Count existing relaxed files to determine starting counter
-    existing = glob.glob(os.path.join(output_dir, "*_relaxed.pdb"))
+    # Count existing validated files to determine starting counter
+    existing = glob.glob(os.path.join(output_dir, "*_validated.pdb"))
     start_count = len(existing)
     target_total = start_count + num_to_generate
 
@@ -146,6 +145,8 @@ def generate_conformers(npz_path, output_dir, num_to_generate, verbose=False):
     ]
     if cfg.DEVICE == "cuda":
         cmd.append("--cuda")
+    if verbose:
+        cmd.append("--verbose")
 
     if verbose:
         print(f"   [Gen] Launching subprocess on GPU...", flush=True)
@@ -163,14 +164,15 @@ def generate_conformers(npz_path, output_dir, num_to_generate, verbose=False):
         except OSError:
             pass
 
-    # Collect all relaxed files
-    relaxed_files = sorted(
-        glob.glob(os.path.join(output_dir, "*_relaxed.pdb")),
-        key=_numeric_sort_key_relaxed
+    # Collect all validated files (sample_ldr now handles repair + validation)
+    validated_files = sorted(
+        glob.glob(os.path.join(output_dir, "*_validated.pdb")),
+        key=lambda p: int(re.search(r'(\d+)_validated', os.path.basename(p)).group(1))
+                       if re.search(r'(\d+)_validated', os.path.basename(p)) else 0
     )
     if verbose:
-        print(f"   [Gen] {len(relaxed_files)} relaxed files now in directory.", flush=True)
-    return relaxed_files
+        print(f"   [Gen] {len(validated_files)} validated files now in directory.", flush=True)
+    return validated_files
 
 
 # ------------------------------------------------------------------------
@@ -447,32 +449,12 @@ def run_idr_workflow(prot_id, npz_path, start_res, end_res, verbose=False):
     total_attempts = state["total_attempts"]
 
     # ------------------------------------------------------------------
-    # RESUME PHASE: Process orphaned relaxed files from a killed run
+    # RESUME PHASE: Clean up orphaned files from a killed run
     # ------------------------------------------------------------------
-    orphaned_relaxed = _collect_orphaned_relaxed(output_dir, verbose=verbose)
-    if orphaned_relaxed:
-        num_val, _ = _count_validated(output_dir)
-
-        if verbose:
-            print(f"\n   --- Resume Phase: Chirality ({len(orphaned_relaxed)} orphaned relaxed) ---", flush=True)
-        orphaned_relaxed = repair_and_rerelax(orphaned_relaxed, output_dir, fixed_mask, verbose=verbose)
-
-        if orphaned_relaxed:
-            if verbose:
-                print(f"\n   --- Resume Phase: Validate ({len(orphaned_relaxed)} orphaned relaxed) ---", flush=True)
-            new_valid, total_attempts = validate_all(
-                orphaned_relaxed, output_dir, idr_range, total_attempts, num_val, verbose=verbose
-            )
-            _save_state(output_dir, total_attempts)
-            if verbose:
-                print(f"   [Resume Summary] +{new_valid} recovered from orphaned relaxed files.", flush=True)
-
-    # Clean up any leftover raw files (sample_ldr may have left them)
-    for raw_f in glob.glob(os.path.join(output_dir, "*_raw.pdb")):
-        try:
-            os.remove(raw_f)
-        except OSError:
-            pass
+    # Relaxed files without a matching validated file are leftovers from
+    # interrupted runs. Since sample_ldr now handles repair+validation
+    # internally, these are safely discarded.
+    _cleanup_dir(output_dir)
 
     # ------------------------------------------------------------------
     # MAIN LOOP: Generate+Relax -> Chirality Check/Re-relax -> Validate
@@ -491,28 +473,14 @@ def run_idr_workflow(prot_id, npz_path, start_res, end_res, verbose=False):
         if verbose:
             print(f"   [Status] Have {num_val}/{cfg.SAMPLE_N_CONFS}. Need {needed}. Generating {num_to_generate}.", flush=True)
 
-        # 2. PHASE 1: Generate + relax conformers (sample_ldr handles both)
-        relaxed_files = generate_conformers(npz_path, output_dir, num_to_generate, verbose=verbose)
+        # 2. Generate + relax + validate conformers (sample_ldr handles all via output_to_pdb)
+        validated_files = generate_conformers(npz_path, output_dir, num_to_generate, verbose=verbose)
 
-        if not relaxed_files:
-            print(f"   [Warning] No relaxed files produced. Retrying...", flush=True)
-            continue
+        new_valid = len(validated_files) - num_val
+        total_attempts += num_to_generate
 
-        # 3. PHASE 2: Chirality check on relaxed files (flip + re-relax if needed)
-        if verbose:
-            print(f"\n   --- Phase: Chirality ({len(relaxed_files)} files) ---", flush=True)
-        relaxed_files = repair_and_rerelax(relaxed_files, output_dir, fixed_mask, verbose=verbose)
-
-        if not relaxed_files:
-            print(f"   [Warning] No structures survived chirality repair. Retrying...", flush=True)
-            continue
-
-        # 4. PHASE 3: Validate all with detailed logging
-        if verbose:
-            print(f"\n   --- Phase: Validate ({len(relaxed_files)} files) ---", flush=True)
-        new_valid, total_attempts = validate_all(
-            relaxed_files, output_dir, idr_range, total_attempts, num_val, verbose=verbose
-        )
+        if new_valid == 0:
+            print(f"   [Warning] No validated conformers produced. Retrying...", flush=True)
 
         # Persist state after every round
         _save_state(output_dir, total_attempts)
